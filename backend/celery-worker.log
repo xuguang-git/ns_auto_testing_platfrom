@@ -1,0 +1,4 @@
+[2026-06-03 08:31:40,747: INFO/MainProcess] Connected to redis://127.0.0.1:6379/0
+[2026-06-03 08:31:40,748: INFO/MainProcess] mingle: searching for neighbors
+[2026-06-03 08:31:41,765: INFO/MainProcess] mingle: all alone
+[2026-06-03 08:31:41,775: INFO/MainProcess] celery@LAPTOP-QUCUIOVA ready.
