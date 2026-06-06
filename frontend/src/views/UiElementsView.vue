@@ -53,8 +53,9 @@
           <el-table-column label="状态" width="90">
             <template #default="{ row }"><span class="badge" :class="row.is_active ? 'badge-success' : 'badge-warning'">{{ row.is_active ? "启用" : "停用" }}</span></template>
           </el-table-column>
-          <el-table-column label="操作" width="140" fixed="right">
+          <el-table-column label="操作" width="190" fixed="right">
             <template #default="{ row }">
+              <el-button link type="primary" @click="openValidate(row)">验证</el-button>
               <el-button link type="primary" @click="openElement(row)">编辑</el-button>
               <el-button link class="danger-link" @click="deleteElement(row)">删除</el-button>
             </template>
@@ -122,6 +123,45 @@
       <template #footer>
         <el-button @click="elementDialog = false">取消</el-button>
         <el-button type="primary" @click="saveElement">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="validateDialog" title="定位器验证" width="720px">
+      <div class="locator-check">
+        <div class="locator-check-target">
+          <strong>{{ validatingElement?.name }}</strong>
+          <span>{{ validatingElement?.locator_type }} / {{ validatingElement?.selector }}</span>
+        </div>
+        <el-form label-width="92px">
+          <el-form-item label="页面 URL" required>
+            <el-input v-model="validateForm.url" placeholder="https://example.com/login" />
+          </el-form-item>
+          <el-form-item label="浏览器">
+            <el-select v-model="validateForm.browser" style="width: 180px">
+              <el-option label="Chromium" value="chromium" />
+              <el-option label="Firefox" value="firefox" />
+              <el-option label="WebKit" value="webkit" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <section v-if="validateResult" class="locator-check-result">
+          <div class="locator-check-summary">
+            <span class="badge" :class="validateResult.passed ? 'badge-success' : 'badge-danger'">
+              {{ validateResult.passed ? "PASS" : "FAIL" }}
+            </span>
+            <span>命中 {{ validateResult.match_count || 0 }} 个，可见 {{ validateResult.visible_count || 0 }} 个，耗时 {{ validateResult.duration_ms || 0 }}ms</span>
+          </div>
+          <p v-if="validateResult.error" class="locator-check-error">{{ validateResult.error }}</p>
+          <p v-if="validateResult.sample_text" class="locator-check-text">{{ validateResult.sample_text }}</p>
+          <img v-if="validateResult.screenshot" :src="validateResult.screenshot" alt="定位器验证截图" />
+          <ul v-if="validateResult.suggestions?.length" class="locator-check-suggestions">
+            <li v-for="item in validateResult.suggestions" :key="item">{{ item }}</li>
+          </ul>
+        </section>
+      </div>
+      <template #footer>
+        <el-button @click="validateDialog = false">关闭</el-button>
+        <el-button type="primary" :loading="validating" @click="validateElement">开始验证</el-button>
       </template>
     </el-dialog>
   </div>
@@ -204,8 +244,13 @@ const suiteFilter = ref<number>();
 const selectedPageId = ref<number>();
 const pageDialog = ref(false);
 const elementDialog = ref(false);
+const validateDialog = ref(false);
+const validating = ref(false);
+const validatingElement = ref<UiElement>();
+const validateResult = ref<any>();
 const pageForm = reactive({ id: undefined as number | undefined, suite: undefined as number | undefined, parent: undefined as number | undefined, name: "", path: "", description: "", is_active: true });
 const elementForm = reactive({ id: undefined as number | undefined, suite: undefined as number | undefined, page_node: undefined as number | undefined, name: "", locator_type: "css", selector: "", description: "", is_active: true });
+const validateForm = reactive({ url: "", browser: "chromium" });
 
 const childrenMap = computed(() => pages.value.reduce<Record<number, UiPage[]>>((acc, page) => {
   if (page.parent) {
@@ -326,6 +371,35 @@ const openElement = (row?: UiElement) => {
     is_active: row?.is_active ?? true,
   });
   elementDialog.value = true;
+};
+
+const openValidate = (row: UiElement) => {
+  validatingElement.value = row;
+  validateForm.url = pages.value.find((page) => page.id === row.page_node)?.path || "";
+  validateForm.browser = "chromium";
+  validateResult.value = undefined;
+  validateDialog.value = true;
+};
+
+const validateElement = async () => {
+  if (!validatingElement.value || !validateForm.url.trim()) {
+    ElMessage.warning("请填写页面 URL");
+    return;
+  }
+  validating.value = true;
+  try {
+    const { data } = await platformApi.validateUiElement(validatingElement.value.id, {
+      url: validateForm.url.trim(),
+      browser: validateForm.browser,
+      headless: true,
+      timeout_ms: 30000,
+    });
+    validateResult.value = data;
+    if (data.passed) ElMessage.success("定位器验证通过");
+    else ElMessage.warning("定位器未命中可见元素");
+  } finally {
+    validating.value = false;
+  }
 };
 
 const saveElement = async () => {

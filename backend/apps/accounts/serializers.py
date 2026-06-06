@@ -2,7 +2,6 @@ from django.contrib.auth import authenticate, get_user_model
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.authtoken.models import Token
 
 from apps.accounts.models import AuditLog, LoginAttempt, Permission, Role, UserProfile, UserSession
 from apps.accounts.services import ensure_builtin_roles, ensure_profile, validate_password_policy

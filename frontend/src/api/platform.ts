@@ -75,6 +75,7 @@ export const platformApi = {
   createUiElement: (payload: Record<string, unknown>) => http.post("/ui-elements/", payload),
   updateUiElement: (id: number, payload: Record<string, unknown>) => http.patch(`/ui-elements/${id}/`, payload),
   deleteUiElement: (id: number) => http.delete(`/ui-elements/${id}/`),
+  validateUiElement: (id: number, payload?: Record<string, unknown>) => http.post(`/ui-elements/${id}/validate/`, payload || {}, { timeout: 120000 }),
   uiPages: (params?: Record<string, unknown>) => http.get("/ui-pages/", { params }),
   createUiPage: (payload: Record<string, unknown>) => http.post("/ui-pages/", payload),
   updateUiPage: (id: number, payload: Record<string, unknown>) => http.patch(`/ui-pages/${id}/`, payload),

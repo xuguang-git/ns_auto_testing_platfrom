@@ -4,6 +4,30 @@ from django.db import models
 from apps.core.models import TimestampedModel
 
 
+class AuthToken(models.Model):
+    key = models.CharField(max_length=128, primary_key=True)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="strong_auth_token")
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created"]
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            self.key = self.generate_key()
+        return super().save(*args, **kwargs)
+
+    @staticmethod
+    def generate_key() -> str:
+        # 64 random bytes encoded with URL-safe base64 produce about 512 bits of entropy.
+        import secrets
+
+        return secrets.token_urlsafe(64)
+
+    def __str__(self) -> str:
+        return self.key
+
+
 class Permission(TimestampedModel):
     class Action(models.TextChoices):
         READ = "read", "读取"
@@ -75,7 +99,7 @@ class UserProfile(TimestampedModel):
 
 class UserSession(TimestampedModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="account_sessions")
-    token_key = models.CharField(max_length=40, db_index=True)
+    token_key = models.CharField(max_length=128, db_index=True)
     device = models.CharField(max_length=255, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True)
