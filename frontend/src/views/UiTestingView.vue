@@ -71,6 +71,16 @@
           </div>
           <el-button size="small" :disabled="!lastRun.results.length" @click="exportRunText">导出文本</el-button>
         </div>
+        <div v-if="diagnosticCount" class="ui-diagnostics">
+          <div v-if="lastRun.diagnostics.console_errors.length">
+            <strong>Console</strong>
+            <p v-for="(item, index) in lastRun.diagnostics.console_errors.slice(0, 3)" :key="`console-${index}`">{{ item.type }} · {{ item.text }}</p>
+          </div>
+          <div v-if="lastRun.diagnostics.network_errors.length">
+            <strong>Network</strong>
+            <p v-for="(item, index) in lastRun.diagnostics.network_errors.slice(0, 3)" :key="`network-${index}`">{{ item.status || item.method || "ERR" }} · {{ item.url }}</p>
+          </div>
+        </div>
         <div v-if="lastRun.snapshots.length" class="ui-browser-preview">
           <div class="ui-browser-frame">
             <div class="ui-browser-bar">
@@ -240,7 +250,14 @@ const stepRows = ref<UiStep[]>([]);
 const suiteForm = reactive({ id: undefined as number | undefined, name: "", description: "" });
 const caseForm = reactive({ id: undefined as number | undefined, name: "", suites: [] as number[], start_url: "", browser: "chromium", is_active: true });
 const activeSnapshotOrder = ref(0);
-const lastRun = reactive({ caseName: "", passed: false, duration_ms: 0, results: [] as any[], snapshots: [] as UiSnapshot[] });
+const lastRun = reactive({
+  caseName: "",
+  passed: false,
+  duration_ms: 0,
+  results: [] as any[],
+  snapshots: [] as UiSnapshot[],
+  diagnostics: { console_errors: [] as any[], network_errors: [] as any[] },
+});
 const runModeOptions = [
   { label: "无头执行", value: "headless" },
   { label: "有头执行", value: "headed" },
@@ -267,6 +284,7 @@ const filteredCases = computed(() => cases.value.filter((item) => {
 }));
 const activeElements = computed(() => elements.value.filter((item) => item.is_active));
 const activeSnapshot = computed(() => lastRun.snapshots.find((item) => item.order === activeSnapshotOrder.value) || lastRun.snapshots[0]);
+const diagnosticCount = computed(() => lastRun.diagnostics.console_errors.length + lastRun.diagnostics.network_errors.length);
 
 const load = async () => {
   loading.value = true;
@@ -423,6 +441,7 @@ const runCase = async (row: UiCase) => {
     lastRun.duration_ms = data.duration_ms || 0;
     lastRun.results = data.results || [];
     lastRun.snapshots = data.snapshots || [];
+    lastRun.diagnostics = data.diagnostics || { console_errors: [], network_errors: [] };
     activeSnapshotOrder.value = lastRun.snapshots[lastRun.snapshots.length - 1]?.order || lastRun.snapshots[0]?.order || 0;
     if (data.error) ElMessage.error(data.error);
     else ElMessage.success(data.passed ? "执行通过" : "执行失败");

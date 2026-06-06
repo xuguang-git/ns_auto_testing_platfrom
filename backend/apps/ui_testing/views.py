@@ -6,7 +6,7 @@ from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.services import get_default_project
 from apps.ui_testing.models import UiAction, UiCase, UiElement, UiPage, UiSuite
 from apps.ui_testing.serializers import UiActionSerializer, UiCaseSerializer, UiElementSerializer, UiPageSerializer, UiSuiteSerializer
-from apps.ui_testing.services import run_ui_case
+from apps.ui_testing.services import run_ui_case, validate_ui_element
 
 
 class UiSuiteViewSet(OperatorAuditModelViewSet):
@@ -56,6 +56,11 @@ class UiElementViewSet(OperatorAuditModelViewSet):
     filterset_fields = ["suite", "page_node", "locator_type", "is_active"]
     search_fields = ["name", "page", "page_node__name", "selector", "description"]
     audit_module = "ui_element"
+
+    @decorators.action(detail=True, methods=["post"], url_path="validate")
+    def validate_locator(self, request, pk=None):
+        element = self.get_object()
+        return response.Response(validate_ui_element(element, request.data))
 
 
 class UiPageViewSet(OperatorAuditModelViewSet):
