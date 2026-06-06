@@ -3,11 +3,10 @@ from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import decorators, mixins, response, status, viewsets
-from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
-from apps.accounts.models import AuditLog, LoginAttempt, Permission, Role, UserProfile, UserSession
+from apps.accounts.models import AuditLog, AuthToken, LoginAttempt, Permission, Role, UserProfile, UserSession
 from apps.accounts.permissions import action_permission
 from apps.accounts.serializers import (
     AuditLogSerializer,
@@ -51,8 +50,8 @@ class LoginView(APIView):
         profile.locked_until = None
         profile.status = UserProfile.Status.ACTIVE
         profile.save(update_fields=["failed_login_count", "locked_until", "status", "updated_at"])
-        Token.objects.filter(user=user).delete()
-        token = Token.objects.create(user=user)
+        AuthToken.objects.filter(user=user).delete()
+        token = AuthToken.objects.create(user=user)
         create_user_session(request, user, token, serializer.validated_data.get("remember_me", False))
         user.last_login = timezone.now()
         user.save(update_fields=["last_login"])
@@ -68,7 +67,7 @@ class LogoutView(APIView):
         token_key = request.auth.key if request.auth else ""
         if token_key:
             UserSession.objects.filter(token_key=token_key, revoked_at__isnull=True).update(revoked_at=timezone.now())
-            Token.objects.filter(key=token_key).delete()
+            AuthToken.objects.filter(key=token_key).delete()
         write_audit(request=request, action_type=AuditLog.ActionType.LOGOUT, module="auth", summary="用户退出")
         return response.Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -118,7 +117,7 @@ class ChangePasswordView(APIView):
         profile.must_change_password = False
         profile.save(update_fields=["password_changed_at", "must_change_password", "updated_at"])
         revoke_user_sessions(user)
-        Token.objects.filter(user=user).delete()
+        AuthToken.objects.filter(user=user).delete()
         write_audit(request=request, action_type=AuditLog.ActionType.UPDATE, module="profile", summary="修改密码")
         return response.Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -188,7 +187,7 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save(update_fields=["is_active"])
         profile.save(update_fields=["status", "updated_at"])
         revoke_user_sessions(user)
-        Token.objects.filter(user=user).delete()
+        AuthToken.objects.filter(user=user).delete()
         write_audit(request=request, action_type=AuditLog.ActionType.DISABLE, module="user", target_type="user", target_id=user.id, summary=f"禁用用户 {user.username}")
         return response.Response(self.get_serializer(user).data)
 
@@ -204,7 +203,7 @@ class UserViewSet(viewsets.ModelViewSet):
         profile.must_change_password = serializer.validated_data["must_change_password"]
         profile.save(update_fields=["password_changed_at", "must_change_password", "updated_at"])
         revoke_user_sessions(user)
-        Token.objects.filter(user=user).delete()
+        AuthToken.objects.filter(user=user).delete()
         write_audit(request=request, action_type=AuditLog.ActionType.RESET_PASSWORD, module="user", target_type="user", target_id=user.id, summary=f"重置用户 {user.username} 密码")
         return response.Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -212,7 +211,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def force_logout(self, request, pk=None):
         user = self.get_object()
         count = revoke_user_sessions(user)
-        Token.objects.filter(user=user).delete()
+        AuthToken.objects.filter(user=user).delete()
         write_audit(request=request, action_type=AuditLog.ActionType.FORCE_LOGOUT, module="user", target_type="user", target_id=user.id, summary=f"强制用户 {user.username} 下线")
         return response.Response({"revoked": count})
 
@@ -295,6 +294,6 @@ class UserSessionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         session.revoked_at = timezone.now()
         session.save(update_fields=["revoked_at", "updated_at"])
         if request.auth and request.auth.key == session.token_key:
-            Token.objects.filter(key=session.token_key).delete()
+            AuthToken.objects.filter(key=session.token_key).delete()
         write_audit(request=request, action_type=AuditLog.ActionType.LOGOUT, module="profile", summary="下线登录设备")
         return response.Response(status=status.HTTP_204_NO_CONTENT)
