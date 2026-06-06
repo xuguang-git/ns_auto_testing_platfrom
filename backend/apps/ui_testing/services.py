@@ -31,6 +31,8 @@ def run_ui_case(case, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     steps = list(case.steps or [])[:MAX_STEPS]
     results: list[dict[str, Any]] = []
     snapshots: list[dict[str, Any]] = []
+    console_errors: list[dict[str, Any]] = []
+    network_errors: list[dict[str, Any]] = []
 
     started = time.perf_counter()
     try:
@@ -39,6 +41,7 @@ def run_ui_case(case, payload: dict[str, Any] | None = None) -> dict[str, Any]:
             browser = _launch_browser(p, browser_type, browser_name, headless)
             context = browser.new_context(viewport=viewport)
             page = context.new_page()
+            _attach_diagnostics(page, console_errors, network_errors)
             page.set_default_timeout(timeout_ms)
             page.set_default_navigation_timeout(navigation_timeout_ms)
 
@@ -49,6 +52,7 @@ def run_ui_case(case, payload: dict[str, Any] | None = None) -> dict[str, Any]:
 
             for index, step in enumerate(steps, start=1):
                 result = _run_step(page, step, index, wait_until, capture_screenshots)
+                result["diagnostics"] = _diagnostics_delta(result, console_errors, network_errors)
                 results.append(result)
                 if result.get("screenshot"):
                     snapshots.append(
@@ -74,6 +78,10 @@ def run_ui_case(case, payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "headless": headless,
             "results": results,
             "snapshots": snapshots,
+            "diagnostics": {
+                "console_errors": console_errors[-20:],
+                "network_errors": network_errors[-20:],
+            },
             "error": _friendly_error(exc),
         }
 
@@ -86,7 +94,88 @@ def run_ui_case(case, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "headless": headless,
         "results": results,
         "snapshots": snapshots,
+        "diagnostics": {
+            "console_errors": console_errors[-20:],
+            "network_errors": network_errors[-20:],
+        },
         "error": "",
+    }
+
+
+def validate_ui_element(element, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    url = payload.get("url") or payload.get("start_url") or ""
+    browser_name = payload.get("browser") or "chromium"
+    headless = bool(payload.get("headless", True))
+    timeout_ms = _safe_timeout_ms(payload.get("timeout_ms"), DEFAULT_TIMEOUT_MS)
+    wait_until = payload.get("wait_until") or DEFAULT_GOTO_WAIT_UNTIL
+    viewport = payload.get("viewport") or {"width": 1366, "height": 768}
+    console_errors: list[dict[str, Any]] = []
+    network_errors: list[dict[str, Any]] = []
+    started = time.perf_counter()
+
+    if not url:
+        return {
+            "ok": False,
+            "passed": False,
+            "duration_ms": 0,
+            "error": "请填写待验证页面 URL",
+            "suggestions": ["可使用用例起始地址或页面完整地址验证定位器。"],
+        }
+
+    try:
+        with sync_playwright() as p:
+            browser_type = getattr(p, browser_name)
+            browser = _launch_browser(p, browser_type, browser_name, headless)
+            context = browser.new_context(viewport=viewport)
+            page = context.new_page()
+            _attach_diagnostics(page, console_errors, network_errors)
+            page.set_default_timeout(timeout_ms)
+            page.goto(url, wait_until=wait_until)
+
+            locator = _build_locator(page, element.selector, element.locator_type)
+            count = locator.count()
+            visible_count = 0
+            first_text = ""
+            if count:
+                sample_count = min(count, 5)
+                for index in range(sample_count):
+                    item = locator.nth(index)
+                    if item.is_visible():
+                        visible_count += 1
+                        if not first_text:
+                            try:
+                                first_text = item.inner_text(timeout=1000)[:200]
+                            except PlaywrightError:
+                                first_text = ""
+            screenshot = _capture_snapshot(page, 0, element.name, visible_count > 0).get("screenshot", "")
+            final_url = page.url
+            context.close()
+            browser.close()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "passed": False,
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+            "error": _friendly_error(exc),
+            "diagnostics": {"console_errors": console_errors[-20:], "network_errors": network_errors[-20:]},
+            "suggestions": _locator_suggestions(element),
+        }
+
+    passed = count > 0 and visible_count > 0
+    return {
+        "ok": True,
+        "passed": passed,
+        "duration_ms": int((time.perf_counter() - started) * 1000),
+        "url": final_url,
+        "selector": element.selector,
+        "locator_type": element.locator_type,
+        "match_count": count,
+        "visible_count": visible_count,
+        "sample_text": first_text,
+        "screenshot": screenshot,
+        "diagnostics": {"console_errors": console_errors[-20:], "network_errors": network_errors[-20:]},
+        "suggestions": [] if passed else _locator_suggestions(element),
     }
 
 
@@ -107,23 +196,23 @@ def _run_step(
         if action == "goto":
             page.goto(value, wait_until=wait_until)
         elif action == "click":
-            page.locator(selector).click()
+            _build_locator(page, selector, step.get("locator_type")).click()
         elif action == "fill":
-            page.locator(selector).fill(value)
+            _build_locator(page, selector, step.get("locator_type")).fill(value)
         elif action == "press":
-            page.locator(selector or "body").press(value)
+            _build_locator(page, selector or "body", step.get("locator_type")).press(value)
         elif action == "select":
-            page.locator(selector).select_option(value)
+            _build_locator(page, selector, step.get("locator_type")).select_option(value)
         elif action == "check":
-            page.locator(selector).check()
+            _build_locator(page, selector, step.get("locator_type")).check()
         elif action == "uncheck":
-            page.locator(selector).uncheck()
+            _build_locator(page, selector, step.get("locator_type")).uncheck()
         elif action == "wait":
             page.wait_for_timeout(int(value or 1000))
         elif action == "assert_visible":
-            page.locator(selector).wait_for(state="visible")
+            _build_locator(page, selector, step.get("locator_type")).wait_for(state="visible")
         elif action == "assert_text":
-            text = page.locator(selector).inner_text()
+            text = _build_locator(page, selector, step.get("locator_type")).inner_text()
             if expected not in text:
                 raise AssertionError(f"expected text contains {expected}, actual {text}")
         elif action == "assert_url":
@@ -182,6 +271,66 @@ def _normalize_selector(selector: str) -> str:
     if value.startswith("/") or value.startswith("("):
         return f"xpath={value}"
     return value
+
+
+def _build_locator(page, selector: str, locator_type: str | None = None):
+    value = selector.strip()
+    kind = (locator_type or "").lower()
+    if kind == "text":
+        return page.get_by_text(value)
+    if kind == "role":
+        role, _, name = value.partition("=")
+        return page.get_by_role(role.strip() or value, name=name.strip() or None)
+    if kind == "test_id":
+        return page.get_by_test_id(value)
+    if kind == "xpath":
+        return page.locator(value if value.startswith("xpath=") else f"xpath={value}")
+    return page.locator(_normalize_selector(value))
+
+
+def _attach_diagnostics(page, console_errors: list[dict[str, Any]], network_errors: list[dict[str, Any]]) -> None:
+    page.on(
+        "console",
+        lambda msg: console_errors.append({"type": msg.type, "text": msg.text, "url": page.url})
+        if msg.type in {"error", "warning"}
+        else None,
+    )
+    page.on(
+        "requestfailed",
+        lambda request: network_errors.append(
+            {
+                "url": request.url,
+                "method": request.method,
+                "failure": request.failure or "",
+            }
+        ),
+    )
+    page.on(
+        "response",
+        lambda resp: network_errors.append({"url": resp.url, "status": resp.status, "status_text": resp.status_text})
+        if resp.status >= 400
+        else None,
+    )
+
+
+def _diagnostics_delta(result: dict[str, Any], console_errors: list[dict[str, Any]], network_errors: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "console_error_count": len(console_errors),
+        "network_error_count": len(network_errors),
+        "failed": 0 if result.get("passed") else 1,
+    }
+
+
+def _locator_suggestions(element) -> list[str]:
+    suggestions = [
+        "优先使用 data-testid 或稳定业务属性，减少 CSS 层级变化带来的失效。",
+        "如果元素是按钮/输入框，可尝试 Role、Text 或 TestId 定位方式。",
+    ]
+    if element.locator_type == "css" and ">" in element.selector:
+        suggestions.insert(0, "当前 CSS 层级较深，建议改为更稳定的 class、name、aria-label 或 data-testid。")
+    if element.locator_type == "xpath":
+        suggestions.insert(0, "XPath 对页面结构变化较敏感，建议优先替换为 CSS、Role 或 TestId。")
+    return suggestions
 
 
 def _friendly_error(exc: Exception) -> str:
