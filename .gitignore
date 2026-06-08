@@ -8,6 +8,8 @@ __pycache__/
 db.sqlite3
 media/
 staticfiles/
+perf_results/
+backend/perf_results/
 .env
 *.log
 celerybeat-schedule*

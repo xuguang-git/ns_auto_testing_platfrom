@@ -16,6 +16,10 @@ env = environ.Env(
     DB_HOST=(str, "127.0.0.1"),
     DB_PORT=(int, 3306),
     REDIS_URL=(str, "redis://127.0.0.1:6379/0"),
+    JAVA_BIN=(str, "java"),
+    JMETER_BIN=(str, "jmeter"),
+    PERF_RESULT_DIR=(str, str(BASE_DIR / "perf_results")),
+    PERF_USE_CELERY=(bool, False),
     API_DEBUG_ALLOW_PRIVATE_NETWORK=(bool, False),
     API_DEBUG_MAX_TIMEOUT_SECONDS=(int, 30),
     API_DEBUG_MAX_RESPONSE_BYTES=(int, 1024 * 1024),
@@ -45,6 +49,7 @@ INSTALLED_APPS = [
     "apps.ui_testing",
     "apps.test_runs",
     "apps.scheduling",
+    "apps.performance_testing",
 ]
 
 MIDDLEWARE = [
@@ -151,3 +156,7 @@ CELERY_BEAT_SCHEDULE = {
 API_DEBUG_ALLOW_PRIVATE_NETWORK = env("API_DEBUG_ALLOW_PRIVATE_NETWORK")
 API_DEBUG_MAX_TIMEOUT_SECONDS = env("API_DEBUG_MAX_TIMEOUT_SECONDS")
 API_DEBUG_MAX_RESPONSE_BYTES = env("API_DEBUG_MAX_RESPONSE_BYTES")
+JAVA_BIN = env("JAVA_BIN")
+JMETER_BIN = env("JMETER_BIN")
+PERF_RESULT_DIR = env("PERF_RESULT_DIR")
+PERF_USE_CELERY = env("PERF_USE_CELERY")

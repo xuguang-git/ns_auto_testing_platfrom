@@ -27,6 +27,7 @@ from apps.api_testing.views import (
     ApiSuiteViewSet,
     ApiTestCaseViewSet,
 )
+from apps.performance_testing.views import ExecutorCheckViewSet, JMeterScriptViewSet, PerformanceRunViewSet, PerformanceTaskViewSet
 from apps.projects.views import DataFactoryCapabilityViewSet, EnvironmentVariableViewSet, EnvironmentViewSet, PlatformViewSet, ProjectViewSet
 from apps.scheduling.views import ScheduledPlanViewSet
 from apps.test_runs.views import TestPlanViewSet, TestRunViewSet
@@ -61,6 +62,10 @@ router.register("ui-actions", UiActionViewSet)
 router.register("test-plans", TestPlanViewSet)
 router.register("test-runs", TestRunViewSet)
 router.register("scheduled-plans", ScheduledPlanViewSet)
+router.register("performance/executor", ExecutorCheckViewSet, basename="performance-executor")
+router.register("performance/scripts", JMeterScriptViewSet)
+router.register("performance/tasks", PerformanceTaskViewSet)
+router.register("performance/runs", PerformanceRunViewSet)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
