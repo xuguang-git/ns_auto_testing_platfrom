@@ -141,6 +141,12 @@ CELERY_RESULT_BACKEND = env("REDIS_URL")
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BEAT_SCHEDULE = {
+    "dispatch-scheduled-plans-every-minute": {
+        "task": "apps.scheduling.tasks.dispatch_scheduled_plans",
+        "schedule": 60.0,
+    }
+}
 
 API_DEBUG_ALLOW_PRIVATE_NETWORK = env("API_DEBUG_ALLOW_PRIVATE_NETWORK")
 API_DEBUG_MAX_TIMEOUT_SECONDS = env("API_DEBUG_MAX_TIMEOUT_SECONDS")

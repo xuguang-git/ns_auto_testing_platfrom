@@ -58,9 +58,8 @@ class TestRun(TimestampedModel):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         RUNNING = "running", "Running"
-        PASSED = "passed", "Passed"
+        COMPLETED = "completed", "Completed"
         FAILED = "failed", "Failed"
-        CANCELED = "canceled", "Canceled"
 
     class TriggerType(models.TextChoices):
         MANUAL = "manual", "Manual"
@@ -77,6 +76,7 @@ class TestRun(TimestampedModel):
     duration_ms = models.PositiveIntegerField(default=0)
     summary = models.JSONField(default=dict, blank=True)
     report = models.JSONField(default=dict, blank=True)
+    logs = models.JSONField(default=list, blank=True)
     error_message = models.TextField(blank=True)
 
     class Meta:

@@ -59,7 +59,8 @@ class TestPlanViewSet(OperatorAuditModelViewSet):
             test_run.finished_at = test_run.started_at
             test_run.error_message = f"Celery broker unavailable: {exc}"
             test_run.summary = {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "pass_rate": 0}
-            test_run.save(update_fields=["status", "started_at", "finished_at", "error_message", "summary", "updated_at"])
+            test_run.logs = [{"time": test_run.started_at.isoformat(), "level": "error", "message": test_run.error_message}]
+            test_run.save(update_fields=["status", "started_at", "finished_at", "error_message", "summary", "logs", "updated_at"])
             serializer = TestRunSerializer(test_run)
             return response.Response(
                 {
