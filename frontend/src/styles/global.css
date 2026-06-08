@@ -1125,6 +1125,59 @@ button.header-avatar {
   border-bottom: 1px solid var(--gray-200);
 }
 
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.run-log-list {
+  max-height: 520px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.run-log-item {
+  display: grid;
+  grid-template-columns: 150px 70px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--gray-50);
+}
+
+.run-log-item span {
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.run-log-item b {
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.run-log-item.info b {
+  color: var(--brand);
+}
+
+.run-log-item.warning b {
+  color: var(--warning-dark);
+}
+
+.run-log-item.error b {
+  color: var(--danger-dark);
+}
+
+.run-log-item p {
+  margin: 0;
+  color: var(--gray-700);
+  overflow-wrap: anywhere;
+}
+
 .debug-workspace .collection-header {
   border-bottom-color: var(--sidebar-border);
 }
@@ -4548,6 +4601,55 @@ button.module-title:hover {
 
 .scenario-results .el-table {
   flex: 1;
+}
+
+.scheduling-page {
+  height: calc(100vh - 104px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.scheduling-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-xl);
+  background: #fff;
+}
+
+.scheduling-card {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-xl);
+  background: #fff;
+  padding: 14px;
+}
+
+.cron-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cron-presets button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+
+.cron-presets button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .data-factory-page {

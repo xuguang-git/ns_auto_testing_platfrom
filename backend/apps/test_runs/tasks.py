@@ -12,7 +12,8 @@ def run_test_plan(self, test_run_id: int) -> dict:
     test_run.status = TestRun.Status.RUNNING
     test_run.celery_task_id = self.request.id or test_run.celery_task_id
     test_run.started_at = timezone.now()
-    test_run.save(update_fields=["status", "celery_task_id", "started_at", "updated_at"])
+    test_run.logs = _append_log(test_run.logs, "info", f"测试计划开始执行：{test_run.plan.name}")
+    test_run.save(update_fields=["status", "celery_task_id", "started_at", "logs", "updated_at"])
 
     total = passed = failed = skipped = 0
     sort_order = 0
@@ -62,6 +63,7 @@ def run_test_plan(self, test_run_id: int) -> dict:
                     error_message=result.get("error") or "",
                     duration_ms=(result.get("response") or {}).get("elapsed_ms") or 0,
                 )
+                test_run.logs = _append_log(test_run.logs, "info" if step_passed else "error", f"{api.name} {'通过' if step_passed else '失败'}")
 
                 if failed and test_run.plan.failure_strategy == test_run.plan.FailureStrategy.FAST_FAIL:
                     skipped = max(len(test_run.plan.api_ids) - total, 0)
@@ -106,17 +108,20 @@ def run_test_plan(self, test_run_id: int) -> dict:
                     error_message=result.get("error") or "",
                     duration_ms=(result.get("response") or {}).get("elapsed_ms") or 0,
                 )
+                test_run.logs = _append_log(test_run.logs, "info" if step_passed else "error", f"{scenario.name} / {step.name} {'通过' if step_passed else '失败'}")
 
                 if failed and test_run.plan.failure_strategy == test_run.plan.FailureStrategy.FAST_FAIL:
                     skipped = _mark_remaining_skipped(test_run, scenarios, scenario.id, step.id, sort_order)
                     raise StopIteration
 
-        final_status = TestRun.Status.PASSED if failed == 0 else TestRun.Status.FAILED
+        final_status = TestRun.Status.COMPLETED
     except StopIteration:
-        final_status = TestRun.Status.FAILED
+        final_status = TestRun.Status.COMPLETED
+        test_run.logs = _append_log(test_run.logs, "warning", "已按失败快速停止策略终止剩余步骤")
     except Exception as exc:
         final_status = TestRun.Status.FAILED
         test_run.error_message = str(exc)
+        test_run.logs = _append_log(test_run.logs, "error", f"执行异常：{exc}")
 
     finished_at = timezone.now()
     duration_ms = int((finished_at - test_run.started_at).total_seconds() * 1000) if test_run.started_at else 0
@@ -132,6 +137,7 @@ def run_test_plan(self, test_run_id: int) -> dict:
     test_run.duration_ms = duration_ms
     test_run.summary = summary
     test_run.report = {"summary": summary}
+    test_run.logs = _append_log(test_run.logs, "info" if final_status == TestRun.Status.COMPLETED else "error", f"执行结束：总数 {summary['total']}，通过 {passed}，失败 {failed}，跳过 {skipped}")
     test_run.save(
         update_fields=[
             "status",
@@ -139,11 +145,18 @@ def run_test_plan(self, test_run_id: int) -> dict:
             "duration_ms",
             "summary",
             "report",
+            "logs",
             "error_message",
             "updated_at",
         ]
     )
     return summary
+
+
+def _append_log(logs, level: str, message: str) -> list[dict]:
+    items = list(logs or [])
+    items.append({"time": timezone.now().isoformat(), "level": level, "message": message})
+    return items[-500:]
 
 
 def _mark_remaining_skipped(test_run, scenarios, current_scenario_id, current_step_id, sort_order: int) -> int:

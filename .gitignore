@@ -9,6 +9,9 @@ db.sqlite3
 media/
 staticfiles/
 .env
+*.log
+celerybeat-schedule*
+backend/celerybeat-schedule*
 
 node_modules/
 dist/

@@ -9,7 +9,7 @@
       <button v-for="run in filteredRuns" :key="run.id" class="report-item" :class="{ active: selectedRun?.id === run.id }" @click="selectedRun = run">
         <div class="report-item-head">
           <strong>#{{ run.id }}</strong>
-          <span>{{ run.status }}</span>
+          <span>{{ runStatusText(run.status) }}</span>
         </div>
         <div class="report-item-time">{{ run.created_at }}</div>
         <el-progress :percentage="run.summary?.pass_rate || 0" :show-text="false" />
@@ -21,7 +21,7 @@
       <div class="report-header-card">
         <div>
           <h2>执行报告 #{{ selectedRun.id }}</h2>
-          <p>状态：{{ selectedRun.status }} · 触发方式：{{ selectedRun.trigger_type }} · 耗时：{{ selectedRun.duration_ms || 0 }}ms</p>
+          <p>状态：{{ runStatusText(selectedRun.status) }} · 触发方式：{{ selectedRun.trigger_type }} · 耗时：{{ selectedRun.duration_ms || 0 }}ms</p>
         </div>
         <div class="pass-circle">{{ selectedRun.summary?.pass_rate || 0 }}%</div>
       </div>
@@ -35,7 +35,10 @@
         <template #header>
           <div class="card-header">
             <span>步骤详情</span>
-            <el-link :href="`/api/v1/test-runs/${selectedRun.id}/html-report/`" target="_blank">导出 HTML</el-link>
+            <div class="report-actions">
+              <el-button size="small" @click="openLogs(selectedRun)">查看日志</el-button>
+              <el-link :href="`/api/v1/test-runs/${selectedRun.id}/html-report/`" target="_blank">导出 HTML</el-link>
+            </div>
           </div>
         </template>
         <el-table :data="selectedRun.steps || []" stripe>
@@ -49,6 +52,16 @@
       </el-card>
     </section>
     <el-empty v-else description="暂无报告" style="flex: 1" />
+    <el-dialog v-model="logDialogVisible" title="执行日志" width="760px">
+      <div class="run-log-list">
+        <div v-for="(item, index) in activeLogs" :key="index" class="run-log-item" :class="item.level || 'info'">
+          <span>{{ formatLogTime(item.time) }}</span>
+          <b>{{ item.level || "info" }}</b>
+          <p>{{ item.message }}</p>
+        </div>
+        <el-empty v-if="!activeLogs.length" description="暂无执行日志" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -61,8 +74,16 @@ const loading = ref(false);
 const keyword = ref("");
 const runs = ref<any[]>([]);
 const selectedRun = ref<any>();
+const logDialogVisible = ref(false);
+const activeLogs = ref<any[]>([]);
 
 const filteredRuns = computed(() => runs.value.filter((run) => !keyword.value || String(run.id).includes(keyword.value)));
+const runStatusText = (status: string) => ({ pending: "待执行", running: "执行中", completed: "完成", failed: "失败" }[status] || status || "未知");
+const formatLogTime = (value?: string) => value ? value.replace("T", " ").slice(0, 19) : "";
+const openLogs = (run: any) => {
+  activeLogs.value = run.logs || [];
+  logDialogVisible.value = true;
+};
 
 onMounted(async () => {
   loading.value = true;

@@ -11,6 +11,9 @@ class ScheduledPlan(OwnedModel):
     is_active = models.BooleanField("启用", default=True)
     last_run_at = models.DateTimeField("最近运行时间", null=True, blank=True)
     next_run_at = models.DateTimeField("下次运行时间", null=True, blank=True)
+    last_run_id = models.PositiveBigIntegerField("最近执行ID", null=True, blank=True)
+    last_status = models.CharField("最近执行状态", max_length=16, blank=True)
+    run_count = models.PositiveIntegerField("执行次数", default=0)
 
     class Meta:
         verbose_name = "测试调度"
