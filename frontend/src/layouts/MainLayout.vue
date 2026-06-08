@@ -113,6 +113,7 @@ const icons = {
   quick: svg('<path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z"/>'),
   automation: svg('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V5s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>'),
   ui: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>'),
+  performance: svg('<path d="M4 19h16"/><path d="M6 16l3-5 4 3 5-8"/><path d="M18 6h2v2"/>'),
   report: svg('<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'),
   schedule: svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
   user: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>'),
@@ -164,6 +165,14 @@ const navGroups: NavGroup[] = [
       { label: "测试套件", path: "/ui-testing/suites", icon: icons.ui, section: "UI测试" },
       { label: "测试用例", path: "/ui-testing/cases", icon: icons.case, section: "UI测试" },
       { label: "定位元素", path: "/ui-testing/elements", icon: icons.case, section: "UI测试" },
+    ],
+  },
+  {
+    key: "performance",
+    label: "性能测试",
+    icon: icons.performance,
+    items: [
+      { label: "性能测试", path: "/performance-testing", icon: icons.performance, section: "性能测试" },
     ],
   },
   {
