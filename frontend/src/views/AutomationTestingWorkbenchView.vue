@@ -341,6 +341,10 @@ const primaryAction = () => {
     newScenario();
     return;
   }
+  if (activeFeature.value === "schedule") {
+    router.push("/scheduling");
+    return;
+  }
   ElMessage.info(`${currentFeature.value.label}将在后续阶段接入。`);
 };
 

@@ -154,8 +154,8 @@ const progressPercent = computed(() => (total.value ? Math.round((done.value / t
 const runInfo = computed(() => (activePlan.value ? `${activePlan.value.name} · ${availableModules.value.length} 个模块` : "尚未选择执行计划"));
 
 const countStepStatus = (status: string) => (selectedRun.value?.steps || []).filter((step: any) => step.status === status).length;
-const statusText = (status: string) => ({ pending: "等待中", running: "执行中", passed: "通过", failed: "失败", skipped: "跳过", canceled: "已取消" }[status] || status || "未知");
-const statusClass = (status: string) => (status === "passed" ? "success" : status === "failed" ? "danger" : status === "running" || status === "pending" ? "warning" : "muted");
+const statusText = (status: string) => ({ pending: "待执行", running: "执行中", completed: "完成", failed: "失败", passed: "通过", skipped: "跳过" }[status] || status || "未知");
+const statusClass = (status: string) => (status === "completed" || status === "passed" ? "success" : status === "failed" ? "danger" : status === "running" || status === "pending" ? "warning" : "muted");
 const planName = (id: number) => plans.value.find((plan) => plan.id === id)?.name || `计划 ${id}`;
 
 const applyPlanConfig = () => {

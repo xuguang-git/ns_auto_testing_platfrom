@@ -28,6 +28,7 @@ from apps.api_testing.views import (
     ApiTestCaseViewSet,
 )
 from apps.projects.views import DataFactoryCapabilityViewSet, EnvironmentVariableViewSet, EnvironmentViewSet, PlatformViewSet, ProjectViewSet
+from apps.scheduling.views import ScheduledPlanViewSet
 from apps.test_runs.views import TestPlanViewSet, TestRunViewSet
 from apps.ui_testing.views import UiActionViewSet, UiCaseViewSet, UiElementViewSet, UiPageViewSet, UiSuiteViewSet
 
@@ -59,6 +60,7 @@ router.register("ui-pages", UiPageViewSet)
 router.register("ui-actions", UiActionViewSet)
 router.register("test-plans", TestPlanViewSet)
 router.register("test-runs", TestRunViewSet)
+router.register("scheduled-plans", ScheduledPlanViewSet)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
