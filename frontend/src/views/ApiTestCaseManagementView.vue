@@ -201,6 +201,14 @@
               <span>实际请求地址</span>
               <code>{{ resolvedRequestUrl }}</code>
             </div>
+            <div class="case-data-source-row">
+              <el-select v-model="preDataSourceIds" multiple collapse-tags collapse-tags-tooltip clearable placeholder="前置数据源" style="width: 260px">
+                <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
+              </el-select>
+              <el-select v-model="postDataSourceIds" multiple collapse-tags collapse-tags-tooltip clearable placeholder="后置数据源" style="width: 260px">
+                <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
+              </el-select>
+            </div>
             <el-tabs v-model="debugReqTab">
               <el-tab-pane label="Params" name="params">
                 <div class="variable-hint" v-pre>变量引用：在 Value 中使用 {{变量名}}；发送时先取当前环境全局变量，再用当前接口平台变量覆盖同名变量。</div>
@@ -383,6 +391,8 @@ interface ApiTestCase {
   priority?: string;
   description?: string;
   request_override?: Record<string, any>;
+  pre_data_source_ids?: number[];
+  post_data_source_ids?: number[];
   assertions?: unknown[];
 }
 
@@ -427,6 +437,7 @@ const apis = ref<ApiDefinition[]>([]);
 const platforms = ref<any[]>([]);
 const modules = ref<any[]>([]);
 const environments = ref<any[]>([]);
+const testDataSources = ref<any[]>([]);
 const cases = ref<ApiTestCase[]>([]);
 const selectedApi = ref<ApiDefinition>();
 const selectedPlatform = ref("");
@@ -445,6 +456,8 @@ const headerRows = ref<RowItem[]>([]);
 const bodyText = ref("{}");
 const assertionRows = ref<AssertionRow[]>([]);
 const extractorRows = ref<ExtractorRow[]>([]);
+const preDataSourceIds = ref<number[]>([]);
+const postDataSourceIds = ref<number[]>([]);
 const authType = ref("none");
 const authToken = ref("");
 const debugForm = reactive({ method: "GET", path: "", environment: undefined as number | undefined });
@@ -502,6 +515,7 @@ const resolvedRequestUrl = computed(() => {
 const responseBodyText = computed(() => JSON.stringify(debugResult.value?.response?.body ?? {}, null, 2));
 const responseHeadersText = computed(() => JSON.stringify(debugResult.value?.response?.headers ?? {}, null, 2));
 const responseStatusClass = computed(() => Number(debugResult.value?.response?.status_code || 0) >= 400 ? "status-error" : "status-ok");
+const activeTestDataSources = computed(() => testDataSources.value.filter((item) => item.is_active));
 
 const platformName = (code: string) => platformOptions.value.find((item) => item.code === code)?.name || code;
 const moduleName = (id?: number) => modules.value.find((item) => item.id === id)?.name || "未分配";
@@ -655,11 +669,12 @@ const saveExtractorVariable = async (item: ExtractorRow) => {
 };
 
 const load = async () => {
-  const [apiResp, platformResp, moduleResp, envResp] = await Promise.all([platformApi.apiDefinitions(), platformApi.platforms(), platformApi.apiModules(), platformApi.environments()]);
+  const [apiResp, platformResp, moduleResp, envResp, dataSourceResp] = await Promise.all([platformApi.apiDefinitions(), platformApi.platforms(), platformApi.apiModules(), platformApi.environments(), platformApi.testDataSources()]);
   apis.value = unwrapList<ApiDefinition>(apiResp.data);
   platforms.value = unwrapList(platformResp.data);
   modules.value = unwrapList(moduleResp.data);
   environments.value = unwrapList(envResp.data);
+  testDataSources.value = unwrapList(dataSourceResp.data);
   expandedPlatforms.value = platformOptions.value.filter((item) => platformHasChildren(item.code)).map((item) => item.code);
   expandedModules.value = modules.value.filter((item) => moduleHasChildren(modulePlatformCode(item), item.id)).map((item) => item.id);
   debugForm.environment = environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id;
@@ -769,6 +784,8 @@ const openDebug = (row: ApiTestCase, editName = false) => {
   authToken.value = String(auth.token || "");
   assertionRows.value = (row.assertions?.length ? row.assertions : selectedApi.value.assertions?.length ? selectedApi.value.assertions : [{ type: "status_code", operator: "eq", expected: 200 }]).map(createAssertion);
   extractorRows.value = (override.extractors?.length ? override.extractors : [{ name: "token", path: "$.data.token" }]).map(createExtractor);
+  preDataSourceIds.value = Array.isArray(row.pre_data_source_ids) ? [...row.pre_data_source_ids] : [];
+  postDataSourceIds.value = Array.isArray(row.post_data_source_ids) ? [...row.post_data_source_ids] : [];
   debugResult.value = null;
   debugReqTab.value = "params";
   debugRespTab.value = "body";
@@ -829,6 +846,9 @@ const buildDebugPayload = () => {
     headers: headerRows.value,
     body: parseJson(bodyText.value, {}),
     auth_config: { type: authType.value, token: authToken.value },
+    pre_test_data_sources: preDataSourceIds.value,
+    post_test_data_sources: postDataSourceIds.value,
+    extractors: buildExtractors(),
     assertions: buildAssertions(),
   };
 };
@@ -862,6 +882,8 @@ const saveDebugConfig = async () => {
         auth_config: { type: authType.value, token: authToken.value },
         extractors: buildExtractors(),
       },
+      pre_data_source_ids: preDataSourceIds.value,
+      post_data_source_ids: postDataSourceIds.value,
       assertions: buildAssertions(),
     };
     const { data } = await platformApi.updateApiTestCase(debugCaseRow.value.id, payload);

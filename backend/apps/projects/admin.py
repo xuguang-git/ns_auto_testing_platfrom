@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.projects.models import Environment, EnvironmentVariable, Project
+from apps.projects.models import DatabaseConnection, Environment, EnvironmentPreRequestOperation, EnvironmentVariable, Project, TestDataSource
 
 
 @admin.register(Project)
@@ -22,3 +22,25 @@ class EnvironmentVariableAdmin(admin.ModelAdmin):
     list_display = ["environment", "key", "platform", "scope", "is_secret", "is_enabled"]
     search_fields = ["key", "description"]
     list_filter = ["platform", "scope", "is_secret", "is_enabled"]
+
+
+@admin.register(EnvironmentPreRequestOperation)
+class EnvironmentPreRequestOperationAdmin(admin.ModelAdmin):
+    list_display = ["environment", "name", "platforms", "is_enabled", "sort_order", "updated_at"]
+    search_fields = ["name", "environment__name"]
+    list_filter = ["environment", "is_enabled"]
+    filter_horizontal = ["modules"]
+
+
+@admin.register(DatabaseConnection)
+class DatabaseConnectionAdmin(admin.ModelAdmin):
+    list_display = ["environment", "name", "db_type", "is_active", "last_check_status", "updated_at"]
+    search_fields = ["name", "description"]
+    list_filter = ["environment", "db_type", "is_active", "last_check_status"]
+
+
+@admin.register(TestDataSource)
+class TestDataSourceAdmin(admin.ModelAdmin):
+    list_display = ["project", "environment", "database_connection", "name", "source_type", "is_active", "run_count"]
+    search_fields = ["name", "description", "sql"]
+    list_filter = ["project", "environment", "source_type", "is_active"]

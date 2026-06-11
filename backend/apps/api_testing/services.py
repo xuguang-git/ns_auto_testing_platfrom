@@ -11,7 +11,9 @@ import requests
 from django.conf import settings
 from django.utils import timezone
 
+from apps.projects.db_services import execute_test_data_source
 from apps.projects.models import Environment
+from apps.projects.models import TestDataSource
 
 
 VAR_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_.-]+)\s*}}")
@@ -30,8 +32,29 @@ BLOCKED_REQUEST_HEADERS = {
 def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
     environment = _get_environment(payload.get("environment"))
     platform = payload.get("platform") or "ERP"
+    module_id = payload.get("module")
     variables = _build_variables(environment, platform, payload.get("variables") or {})
-    pre_request_logs: list[str] = []
+    data_logs: list[str] = []
+    session_logs: list[str] = []
+    extracted_variables: dict[str, Any] = {}
+    try:
+        pre_source_ids = payload.get("pre_test_data_sources")
+        if pre_source_ids is None:
+            pre_source_ids = payload.get("test_data_sources") or []
+        pre_logs, pre_variables = _apply_test_data_sources(pre_source_ids or [], variables, "pre")
+        data_logs.extend(pre_logs)
+        extracted_variables.update(pre_variables)
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "passed": False,
+            "request": {"method": payload.get("method") or "GET", "url": payload.get("path") or payload.get("url") or "/"},
+            "response": {"elapsed_ms": 0},
+            "assertions": [],
+            "variables": extracted_variables,
+            "logs": [*data_logs, str(exc)],
+            "error": str(exc),
+        }
     method = (payload.get("method") or "GET").upper()
     path = payload.get("path") or payload.get("url") or "/"
     base_url = _get_base_url(environment, platform)
@@ -46,7 +69,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
 
     started = time.perf_counter()
     try:
-        token_context, pre_request_logs = _ensure_session_token(environment, platform, variables)
+        token_context, session_logs = _ensure_session_token(environment, platform, variables, module_id)
         if token_context:
             variables[token_context["token_key"]] = token_context["token"]
         headers = _apply_auth(headers, auth_config, variables)
@@ -74,6 +97,14 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         response_text = _decode_response_text(resp, content)
         response_body = _parse_response_body(resp, response_text)
+        response_variables = _extract_response_variables(payload.get("extractors") or [], response_body)
+        if response_variables:
+            variables.update(response_variables)
+            extracted_variables.update(response_variables)
+            data_logs.append(f"Response extractors captured {len(response_variables)} variable(s).")
+        post_logs, post_variables = _apply_test_data_sources(payload.get("post_test_data_sources") or [], variables, "post")
+        data_logs.extend(post_logs)
+        extracted_variables.update(post_variables)
         assertion_results = evaluate_assertions(payload.get("assertions") or [], resp, response_body, elapsed_ms)
         passed = all(item["passed"] for item in assertion_results)
         return {
@@ -90,7 +121,8 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
                 "text": response_text,
             },
             "assertions": assertion_results,
-            "logs": [*pre_request_logs, f"{method} {resp.request.url}", f"HTTP {resp.status_code} {elapsed_ms}ms"],
+            "variables": extracted_variables,
+            "logs": [*data_logs, *session_logs, f"{method} {resp.request.url}", f"HTTP {resp.status_code} {elapsed_ms}ms"],
         }
     except requests.RequestException as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -100,9 +132,55 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "request": {"method": method, "url": url, "headers": headers, "params": params, "body": body},
             "response": {"elapsed_ms": elapsed_ms},
             "assertions": [],
-            "logs": [*pre_request_logs, str(exc)],
+            "variables": extracted_variables,
+            "logs": [*data_logs, *session_logs, str(exc)],
             "error": str(exc),
         }
+
+
+def _apply_test_data_sources(source_ids: list[Any], variables: dict[str, Any], phase: str) -> tuple[list[str], dict[str, Any]]:
+    logs: list[str] = []
+    extracted: dict[str, Any] = {}
+    ids: list[int] = []
+    for item in source_ids:
+        try:
+            source_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if source_id not in ids:
+            ids.append(source_id)
+    if not ids:
+        return logs, extracted
+    sources = {
+        source.id: source
+        for source in TestDataSource.objects.select_related("database_connection").filter(id__in=ids, is_active=True)
+    }
+    for source_id in ids:
+        source = sources.get(source_id)
+        if not source:
+            continue
+        try:
+            result = execute_test_data_source(source, variables)
+        except Exception as exc:
+            raise requests.RequestException(f"Test data source [{source.name}] failed: {exc}") from exc
+        source_variables = result.get("variables") or {}
+        variables.update(source_variables)
+        extracted.update(source_variables)
+        logs.append(f"{phase} data source [{source.name}] extracted {len(source_variables)} variable(s).")
+    return logs, extracted
+
+
+def _extract_response_variables(extractors: list[dict[str, Any]], response_body: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    for extractor in extractors:
+        name = str(extractor.get("name") or "").strip()
+        path = str(extractor.get("path") or extractor.get("key") or "").strip()
+        if not name or not path:
+            continue
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
+            continue
+        values[name] = _json_path(response_body, path)
+    return values
 
 
 def evaluate_assertions(assertions: list[dict[str, Any]], resp, response_body: Any, elapsed_ms: int) -> list[dict[str, Any]]:
@@ -199,11 +277,47 @@ def _apply_auth(headers: dict[str, Any], auth_config: dict[str, Any], variables:
     return headers
 
 
-def _ensure_session_token(environment, platform: str, variables: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+def _ensure_session_token(environment, platform: str, variables: dict[str, Any], module_id: Any = None) -> tuple[dict[str, Any] | None, list[str]]:
+    operation = _match_pre_request_operation(environment, platform, module_id) if environment else None
+    if operation:
+        return _ensure_token_from_config(environment, platform, variables, operation.config or {}, operation_key=f"operation:{operation.id}", operation_name=operation.name)
     if not environment or not environment.pre_request_enabled:
         return None, []
 
     config = environment.pre_request_config or {}
+    return _ensure_token_from_config(environment, platform, variables, config, operation_key="legacy", operation_name="全局前置操作")
+
+
+def _match_pre_request_operation(environment, platform: str, module_id: Any = None):
+    if not environment:
+        return None
+    platform_key = str(platform or "").upper()
+    try:
+        module_pk = int(module_id) if module_id not in (None, "") else None
+    except (TypeError, ValueError):
+        module_pk = None
+    operations = environment.pre_request_operations.filter(is_enabled=True).prefetch_related("modules").order_by("sort_order", "id")
+    module_match = None
+    platform_match = None
+    for operation in operations:
+        operation_modules = list(operation.modules.all())
+        if module_pk and any(item.id == module_pk for item in operation_modules):
+            module_match = operation
+            break
+        operation_platforms = {str(item).upper() for item in operation.platforms or []}
+        if platform_key and platform_key in operation_platforms:
+            platform_match = operation
+    return module_match or platform_match
+
+
+def _ensure_token_from_config(
+    environment,
+    platform: str,
+    variables: dict[str, Any],
+    config: dict[str, Any],
+    operation_key: str,
+    operation_name: str,
+) -> tuple[dict[str, Any] | None, list[str]]:
     if not isinstance(config, dict):
         raise requests.RequestException("全局前置操作配置必须是对象")
 
@@ -212,7 +326,8 @@ def _ensure_session_token(environment, platform: str, variables: dict[str, Any])
         return None, []
 
     token_key = config.get("token_key") or "token"
-    session_key = str(config.get("session_key") or platform or "default").upper()
+    configured_session_key = str(config.get("session_key") or platform or "default").upper()
+    session_key = f"{operation_key}:{configured_session_key}"
     session_store = environment.token_session or {}
     session = session_store.get(session_key) or {}
     token = session.get("token")
@@ -224,21 +339,21 @@ def _ensure_session_token(environment, platform: str, variables: dict[str, Any])
         session_store[session_key] = session
         environment.token_session = session_store
         environment.save(update_fields=["token_session", "updated_at"])
-        return token_context, ["全局前置操作：复用会话 token"]
+        return token_context, [f"{operation_name}：复用会话 token"]
 
     login_config = config.get("login") or {}
     if not login_config.get("path") and not login_config.get("url"):
-        return None, ["全局前置操作：未配置登录请求，已跳过 token 初始化"]
+        return None, [f"{operation_name}：未配置登录请求，已跳过 token 初始化"]
 
     login_resp, login_body = _send_configured_request(environment, platform, login_config, variables)
     success_rule = login_config.get("success") or {"type": "status_code", "operator": "lt", "expected": 400}
     if not _match_success_rule(success_rule, login_resp, login_body, 0):
-        raise requests.RequestException(f"全局前置操作登录失败：HTTP {login_resp.status_code}")
+        raise requests.RequestException(f"{operation_name}登录失败：HTTP {login_resp.status_code}")
 
     token_path = login_config.get("token_path") or "$.data.token"
     token = _json_path(login_body, token_path)
     if token is None:
-        raise requests.RequestException(f"全局前置操作未从响应中提取到 token：{token_path}")
+        raise requests.RequestException(f"{operation_name}未从响应中提取到 token：{token_path}")
 
     token = str(token)
     token_context = _build_token_context(token, token_key, config)
@@ -250,7 +365,7 @@ def _ensure_session_token(environment, platform: str, variables: dict[str, Any])
     }
     environment.token_session = session_store
     environment.save(update_fields=["token_session", "updated_at"])
-    logs.append("全局前置操作：已初始化会话 token")
+    logs.append(f"{operation_name}：已初始化会话 token")
     return token_context, logs
 
 

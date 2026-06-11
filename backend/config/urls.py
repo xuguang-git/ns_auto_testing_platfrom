@@ -27,7 +27,16 @@ from apps.api_testing.views import (
     ApiSuiteViewSet,
     ApiTestCaseViewSet,
 )
-from apps.projects.views import DataFactoryCapabilityViewSet, EnvironmentVariableViewSet, EnvironmentViewSet, PlatformViewSet, ProjectViewSet
+from apps.projects.views import (
+    DataFactoryCapabilityViewSet,
+    DatabaseConnectionViewSet,
+    EnvironmentPreRequestOperationViewSet,
+    EnvironmentVariableViewSet,
+    EnvironmentViewSet,
+    PlatformViewSet,
+    ProjectViewSet,
+    TestDataSourceViewSet,
+)
 from apps.scheduling.views import ScheduledPlanViewSet
 from apps.test_runs.views import TestPlanViewSet, TestRunViewSet
 from apps.ui_testing.views import UiActionViewSet, UiCaseViewSet, UiElementViewSet, UiPageViewSet, UiSuiteViewSet
@@ -44,7 +53,10 @@ router.register("projects", ProjectViewSet)
 router.register("platforms", PlatformViewSet)
 router.register("environments", EnvironmentViewSet)
 router.register("environment-variables", EnvironmentVariableViewSet)
+router.register("environment-pre-request-operations", EnvironmentPreRequestOperationViewSet)
+router.register("database-connections", DatabaseConnectionViewSet)
 router.register("data-factory-capabilities", DataFactoryCapabilityViewSet)
+router.register("test-data-sources", TestDataSourceViewSet)
 router.register("api-modules", ApiModuleViewSet)
 router.register("api-definitions", ApiDefinitionViewSet)
 router.register("api-test-cases", ApiTestCaseViewSet)
