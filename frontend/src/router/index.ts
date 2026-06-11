@@ -27,6 +27,7 @@ const routes: RouteRecordRaw[] = [
       { path: "ui-testing/suites", name: "uiTestingSuites", component: () => import("@/views/UiTestingView.vue") },
       { path: "ui-testing/cases", name: "uiTestingCases", component: () => import("@/views/UiCasesView.vue") },
       { path: "ui-testing/elements", name: "uiElements", component: () => import("@/views/UiElementsView.vue") },
+      { path: "performance-testing", name: "performanceTesting", component: () => import("@/views/PerformanceTestingView.vue") },
       { path: "test-runs", name: "testRuns", component: () => import("@/views/TestRunsView.vue") },
       { path: "reports", name: "reports", component: () => import("@/views/ReportsView.vue") },
       { path: "scheduling", name: "scheduling", component: () => import("@/views/SchedulingView.vue") },

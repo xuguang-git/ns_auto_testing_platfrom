@@ -4654,6 +4654,184 @@ button.module-title:hover {
   color: var(--brand);
 }
 
+.performance-page {
+  height: calc(100vh - 104px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.perf-executor-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-xl);
+  background: #fff;
+}
+
+.perf-executor-card strong {
+  color: var(--gray-900);
+  font-size: 14px;
+}
+
+.perf-executor-card p {
+  margin: 3px 0 0;
+  color: var(--gray-500);
+}
+
+.perf-executor-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.perf-executor-detail span {
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.perf-executor-detail span.ok {
+  background: var(--success-light);
+  color: var(--success-dark);
+}
+
+.perf-executor-detail span.failed {
+  background: var(--danger-light);
+  color: var(--danger-dark);
+}
+
+.perf-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.perf-tabs > .el-tabs__content {
+  flex: 1;
+  min-height: 0;
+}
+
+.perf-tabs > .el-tabs__content > .el-tab-pane {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.perf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-xl);
+  background: #fff;
+}
+
+.perf-card {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-xl);
+  background: #fff;
+  padding: 14px;
+}
+
+.perf-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+}
+
+.perf-run-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.perf-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.perf-summary-grid div {
+  padding: 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--gray-50);
+}
+
+.perf-summary-grid span,
+.run-log-item span {
+  display: block;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+.perf-summary-grid strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--gray-900);
+  font-size: 20px;
+}
+
+.run-log-list {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+
+.run-log-item {
+  display: grid;
+  grid-template-columns: 150px 70px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.run-log-item:last-child {
+  border-bottom: 0;
+}
+
+.run-log-item b {
+  color: var(--brand);
+  font-size: 12px;
+}
+
+.run-log-item.warning b {
+  color: var(--warning-dark);
+}
+
+.run-log-item.error b {
+  color: var(--danger-dark);
+}
+
+.run-log-item p {
+  margin: 0;
+  color: var(--gray-700);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .data-factory-page {
   height: calc(100vh - 104px);
   display: flex;
