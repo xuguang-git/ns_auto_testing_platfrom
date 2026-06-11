@@ -118,6 +118,14 @@
                 <div class="step-main">
                   <el-input v-model="step.name" placeholder="步骤名称" />
                   <span class="inline-code">{{ step.method }} {{ step.path }}</span>
+                  <div class="step-data-sources">
+                    <el-select v-model="step.pre_data_source_ids" multiple collapse-tags collapse-tags-tooltip clearable placeholder="前置数据源">
+                      <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
+                    </el-select>
+                    <el-select v-model="step.post_data_source_ids" multiple collapse-tags collapse-tags-tooltip clearable placeholder="后置数据源">
+                      <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
+                    </el-select>
+                  </div>
                 </div>
                 <div class="step-mini-form">
                   <el-input v-model="step.extractName" placeholder="变量名，如 token" />
@@ -231,6 +239,8 @@ interface ApiStep {
   body_type?: string;
   body?: unknown;
   auth_config?: Record<string, unknown>;
+  pre_data_source_ids?: number[];
+  post_data_source_ids?: number[];
   assertions?: any[];
   extractors?: any[];
   sort_order?: number;
@@ -274,6 +284,7 @@ const cases = ref<ApiTestCase[]>([]);
 const apis = ref<ApiDefinition[]>([]);
 const platformRows = ref<any[]>([]);
 const environments = ref<any[]>([]);
+const testDataSources = ref<any[]>([]);
 const suites = ref<ApiSuite[]>([]);
 const scenarios = ref<ApiScenario[]>([]);
 const selectedScenario = ref<ApiScenario>();
@@ -303,6 +314,7 @@ const filteredCases = computed(() =>
 );
 const filteredScenarios = computed(() => scenarios.value.filter((item) => !scenarioKeyword.value || item.name.toLowerCase().includes(scenarioKeyword.value.toLowerCase())));
 const passedStepCount = computed(() => scenarioResults.value.filter((item) => item.passed).length);
+const activeTestDataSources = computed(() => testDataSources.value.filter((item) => item.is_active));
 
 const platformName = (code: string) => platforms.value.find((item) => item.code === code)?.name || code;
 const caseStatusText = (status: string) => ({ draft: "草稿", active: "启用", inactive: "停用" }[status] || status);
@@ -311,13 +323,14 @@ const caseStatusClass = (status: string) => (status === "active" ? "badge-succes
 const load = async () => {
   loading.value = true;
   try {
-    const [caseResp, platformResp, apiResp, envResp, suiteResp, scenarioResp] = await Promise.all([
+    const [caseResp, platformResp, apiResp, envResp, suiteResp, scenarioResp, dataSourceResp] = await Promise.all([
       platformApi.apiTestCases(),
       platformApi.platforms(),
       platformApi.apiDefinitions(),
       platformApi.environments(),
       platformApi.apiSuites(),
       platformApi.apiScenarios(),
+      platformApi.testDataSources(),
     ]);
     cases.value = unwrapList<ApiTestCase>(caseResp.data);
     platformRows.value = unwrapList(platformResp.data);
@@ -325,6 +338,7 @@ const load = async () => {
     environments.value = unwrapList(envResp.data);
     suites.value = unwrapList<ApiSuite>(suiteResp.data);
     scenarios.value = unwrapList<ApiScenario>(scenarioResp.data);
+    testDataSources.value = unwrapList(dataSourceResp.data);
     runEnvironment.value = runEnvironment.value || environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id;
     if (!selectedScenario.value && scenarios.value.length) await selectScenario(scenarios.value[0]);
   } finally {
@@ -374,6 +388,8 @@ const toScenarioStep = (step: ApiStep): ScenarioStep => {
     assertPath: assertion.path || assertion.key || "",
     assertOperator: assertion.operator || "eq",
     assertExpected: assertion.expected === undefined || assertion.expected === null ? "" : String(assertion.expected),
+    pre_data_source_ids: Array.isArray(step.pre_data_source_ids) ? [...step.pre_data_source_ids] : [],
+    post_data_source_ids: Array.isArray(step.post_data_source_ids) ? [...step.post_data_source_ids] : [],
   };
 };
 
@@ -402,6 +418,8 @@ const addStepFromApi = () => {
     body_type: api.body_type || "none",
     body: api.body || {},
     auth_config: api.auth_config || {},
+    pre_data_source_ids: [],
+    post_data_source_ids: [],
     assertions: api.assertions || [],
     extractors: [],
     is_active: true,
@@ -435,6 +453,8 @@ const stepPayload = (step: ScenarioStep, scenarioId: number, index: number) => (
   body_type: step.body_type || "none",
   body: step.body || {},
   auth_config: step.auth_config || {},
+  pre_data_source_ids: step.pre_data_source_ids || [],
+  post_data_source_ids: step.post_data_source_ids || [],
   extractors: step.extractName && step.extractPath ? [{ name: step.extractName, path: step.extractPath }] : [],
   assertions: step.assertPath ? [{ type: "json_path", path: step.assertPath, operator: step.assertOperator, expected: step.assertOperator === "exists" ? "" : step.assertExpected }] : [],
   sort_order: index,
@@ -499,10 +519,14 @@ const runScenario = async () => {
         query_params: step.query_params || [],
         body: step.body || {},
         auth_config: step.auth_config || {},
+        pre_test_data_sources: step.pre_data_source_ids || [],
+        post_test_data_sources: step.post_data_source_ids || [],
+        extractors: step.extractName && step.extractPath ? [{ name: step.extractName, path: step.extractPath }] : [],
         assertions: [],
         variables,
       });
       const body = data?.response?.body;
+      Object.assign(variables, data?.variables || {});
       let extractedText = "";
       if (step.extractName && step.extractPath) {
         const extracted = extractJsonPath(body, step.extractPath);

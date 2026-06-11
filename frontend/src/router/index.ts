@@ -31,6 +31,7 @@ const routes: RouteRecordRaw[] = [
       { path: "test-runs", name: "testRuns", component: () => import("@/views/TestRunsView.vue") },
       { path: "reports", name: "reports", component: () => import("@/views/ReportsView.vue") },
       { path: "scheduling", name: "scheduling", component: () => import("@/views/SchedulingView.vue") },
+      { path: "database-management", name: "databaseManagement", component: () => import("@/views/DatabaseManagementView.vue") },
       { path: "users", name: "users", component: () => import("@/views/UserManagementView.vue") },
       { path: "roles", name: "roles", component: () => import("@/views/RoleManagementView.vue") },
       { path: "audit-logs", name: "auditLogs", component: () => import("@/views/AuditLogView.vue") },

@@ -116,6 +116,7 @@ const icons = {
   performance: svg('<path d="M4 19h16"/><path d="M6 16l3-5 4 3 5-8"/><path d="M18 6h2v2"/>'),
   report: svg('<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'),
   schedule: svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+  database: svg('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>'),
   user: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>'),
   role: svg('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0"/><circle cx="12" cy="12" r="3"/>'),
   audit: svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/>'),
@@ -192,6 +193,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "测试报告", path: "/reports", icon: icons.report, section: "配置管理" },
       { label: "定时调度", path: "/scheduling", icon: icons.schedule, section: "配置管理" },
+      { label: "数据库管理", path: "/database-management", icon: icons.database, section: "配置管理" },
     ],
   },
 ];

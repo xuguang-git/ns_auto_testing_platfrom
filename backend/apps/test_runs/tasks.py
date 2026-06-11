@@ -32,6 +32,7 @@ def run_test_plan(self, test_run_id: int) -> dict:
                     "environment": test_run.environment_id or test_run.plan.environment_id,
                     "variables": test_run.plan.variables,
                     "platform": api.platform,
+                    "module": api.module_id,
                     "method": api.method,
                     "path": api.path,
                     "headers": api.headers,
@@ -70,23 +71,29 @@ def run_test_plan(self, test_run_id: int) -> dict:
                     raise StopIteration
 
         for scenario in scenarios:
+            scenario_variables = dict(test_run.plan.variables or {})
             for step in scenario.steps.filter(is_active=True):
                 total += 1
                 sort_order += 1
                 payload = {
                     "environment": test_run.environment_id or test_run.plan.environment_id,
-                    "variables": test_run.plan.variables,
+                    "variables": scenario_variables,
                     "platform": step.platform,
+                    "module": step.api.module_id if step.api_id else None,
                     "method": step.method,
                     "path": step.path,
                     "headers": step.headers,
                     "query_params": step.query_params,
                     "body": step.body,
                     "auth_config": step.auth_config,
+                    "pre_test_data_sources": step.pre_data_source_ids,
+                    "post_test_data_sources": step.post_data_source_ids,
+                    "extractors": step.extractors,
                     "assertions": step.assertions,
                     "timeout": test_run.plan.timeout_seconds,
                 }
                 result = execute_debug_request(payload)
+                scenario_variables.update(result.get("variables") or {})
                 step_passed = bool(result.get("ok") and result.get("passed"))
                 if step_passed:
                     passed += 1
