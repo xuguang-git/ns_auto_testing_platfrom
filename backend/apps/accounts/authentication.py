@@ -1,18 +1,18 @@
 from rest_framework import authentication, exceptions
 
 from apps.accounts.models import AuthToken
+from apps.accounts.security import authenticate_access_token, get_access_token_from_request
 
 
-class StrongTokenAuthentication(authentication.TokenAuthentication):
+class StrongTokenAuthentication(authentication.BaseAuthentication):
     model = AuthToken
 
-    def authenticate_credentials(self, key):
-        try:
-            token = self.model.objects.select_related("user").get(key=key)
-        except self.model.DoesNotExist:
-            raise exceptions.AuthenticationFailed("Invalid token.")
-
-        if not token.user.is_active:
-            raise exceptions.AuthenticationFailed("User inactive or deleted.")
-
+    def authenticate(self, request):
+        raw_token = get_access_token_from_request(request)
+        if not raw_token:
+            return None
+        token = authenticate_access_token(raw_token)
         return token.user, token
+
+    def authenticate_header(self, request):
+        return "Token"

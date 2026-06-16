@@ -1,6 +1,7 @@
 from django.db import models
 
 from apps.api_testing.models import ApiScenario, ApiSuite
+from apps.core.db_comments import apply_model_comments
 from apps.core.models import OwnedModel, TimestampedModel
 from apps.projects.models import Environment, Platform, Project
 from apps.ui_testing.models import UiSuite
@@ -47,6 +48,7 @@ class TestPlan(OwnedModel):
     is_active = models.BooleanField(default=True)
 
     class Meta:
+        db_table_comment = '测试计划表：组合接口套件、接口场景和UI套件形成可执行计划。'
         unique_together = [("project", "name")]
         ordering = ["project_id", "name"]
 
@@ -80,6 +82,7 @@ class TestRun(TimestampedModel):
     error_message = models.TextField(blank=True)
 
     class Meta:
+        db_table_comment = '测试执行记录表：一次测试计划运行的总记录和报告汇总。'
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
@@ -107,7 +110,54 @@ class TestRunStep(TimestampedModel):
     duration_ms = models.PositiveIntegerField(default=0)
 
     class Meta:
+        db_table_comment = '测试执行步骤表：一次测试运行中每个接口/场景/UI步骤的结果明细。'
         ordering = ["run_id", "sort_order", "id"]
 
     def __str__(self) -> str:
         return self.step_name
+
+
+apply_model_comments(TestPlan, "测试计划表：组合接口套件、接口场景和UI套件形成可执行计划。", {
+    "project": "所属项目ID。",
+    "platform_ref": "关联平台ID。",
+    "environment": "默认运行环境ID。",
+    "name": "计划名称。",
+    "plan_type": "计划类型：API/UI/混合。",
+    "module_ids": "计划覆盖的接口目录ID列表。",
+    "api_ids": "计划覆盖的接口ID列表。",
+    "variables": "计划级运行变量。",
+    "description": "计划说明。",
+    "status": "计划状态。",
+    "concurrency": "并发数。",
+    "retry_count": "失败重试次数。",
+    "timeout_seconds": "单步骤超时时间秒数。",
+    "failure_strategy": "失败处理策略。",
+    "is_active": "是否启用。",
+})
+apply_model_comments(TestRun, "测试执行记录表：一次测试计划运行的总记录和报告汇总。", {
+    "plan": "关联测试计划ID。",
+    "environment": "本次运行环境ID。",
+    "status": "执行状态。",
+    "trigger_type": "触发方式：手动/定时/Webhook。",
+    "celery_task_id": "异步任务ID。",
+    "started_at": "开始时间。",
+    "finished_at": "结束时间。",
+    "duration_ms": "总耗时毫秒。",
+    "summary": "执行摘要JSON。",
+    "report": "执行报告JSON。",
+    "logs": "执行日志列表。",
+    "error_message": "失败错误信息。",
+})
+apply_model_comments(TestRunStep, "测试执行步骤表：一次测试运行中每个接口/场景/UI步骤的结果明细。", {
+    "run": "所属执行记录ID。",
+    "scenario_name": "所属场景名称。",
+    "step_name": "步骤名称。",
+    "status": "步骤执行状态。",
+    "sort_order": "步骤排序值。",
+    "request": "实际请求信息。",
+    "response": "实际响应信息。",
+    "assertions": "断言执行结果。",
+    "logs": "步骤日志列表。",
+    "error_message": "步骤错误信息。",
+    "duration_ms": "步骤耗时毫秒。",
+})

@@ -7,6 +7,7 @@ from apps.scheduling.services import refresh_next_run
 
 class ScheduledPlanSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
     plan_name = serializers.CharField(source="plan.name", read_only=True)
+    environment_name = serializers.CharField(source="environment.name", read_only=True)
 
     class Meta:
         model = ScheduledPlan
@@ -19,6 +20,7 @@ class ScheduledPlanSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
             "created_by_name",
             "updated_by_name",
             "plan_name",
+            "environment_name",
             "last_run_at",
             "next_run_at",
             "last_run_id",

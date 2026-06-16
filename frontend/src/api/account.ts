@@ -1,7 +1,9 @@
 import { http } from "@/api/http";
 
 export const accountApi = {
+  loginCrypto: () => http.get("/auth/login-crypto/", { cache: false }),
   login: (payload: Record<string, unknown>) => http.post("/auth/login/", payload),
+  refresh: () => http.post("/auth/refresh/", {}, { toast: false }),
   logout: () => http.post("/auth/logout/"),
   me: () => http.get("/auth/me/"),
   profile: () => http.get("/profile/"),

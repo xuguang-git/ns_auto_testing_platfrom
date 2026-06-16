@@ -405,15 +405,21 @@ const KeyValueEditor = defineComponent({
       rows[index] = { ...rows[index], [key]: value };
       emit("update:modelValue", rows);
     };
+    const remove = (index: number) => {
+      const rows = [...(props.modelValue as RowItem[])];
+      rows.splice(index, 1);
+      emit("update:modelValue", rows);
+    };
     const add = () => emit("update:modelValue", [...(props.modelValue as RowItem[]), { enabled: true, key: "", value: "", description: "" }]);
     return () => h("div", { class: "kv-editor" }, [
       h("table", { class: "kv-table" }, [
-        h("thead", [h("tr", [h("th", ""), h("th", "Key"), h("th", "Value"), h("th", "Description")])]),
+        h("thead", [h("tr", [h("th", ""), h("th", "Key"), h("th", "Value"), h("th", "Description"), h("th", "")])]),
         h("tbody", (props.modelValue as RowItem[]).map((row, index) => h("tr", { key: index }, [
-          h("td", [h("input", { type: "checkbox", checked: row.enabled, onChange: (e: Event) => update(index, "enabled", (e.target as HTMLInputElement).checked) })]),
+          h("td", [h("input", { type: "checkbox", checked: row.enabled !== false, onChange: (e: Event) => update(index, "enabled", (e.target as HTMLInputElement).checked) })]),
           h("td", [h("input", { value: row.key, onInput: (e: Event) => update(index, "key", (e.target as HTMLInputElement).value) })]),
           h("td", [h("input", { value: row.value, onInput: (e: Event) => update(index, "value", (e.target as HTMLInputElement).value) })]),
           h("td", [h("input", { value: row.description, onInput: (e: Event) => update(index, "description", (e.target as HTMLInputElement).value) })]),
+          h("td", [h("button", { class: "kv-remove-row", type: "button", title: "删除字段", onClick: () => remove(index) }, "-")]),
         ]))),
       ]),
       h("button", { class: "add-row", onClick: add }, "+ Add row"),
@@ -422,6 +428,7 @@ const KeyValueEditor = defineComponent({
 });
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const enabledRows = (rows: RowItem[]) => rows.filter((row) => row.enabled !== false);
 const route = useRoute();
 const router = useRouter();
 const apiKeyword = ref("");
@@ -842,8 +849,8 @@ const buildDebugPayload = () => {
     platform: selectedApi.value.platform,
     module: selectedApi.value.module,
     environment: debugForm.environment,
-    query_params: paramsRows.value,
-    headers: headerRows.value,
+    query_params: enabledRows(paramsRows.value),
+    headers: enabledRows(headerRows.value),
     body: parseJson(bodyText.value, {}),
     auth_config: { type: authType.value, token: authToken.value },
     pre_test_data_sources: preDataSourceIds.value,

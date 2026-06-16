@@ -1,5 +1,6 @@
 from django.db import models
 
+from apps.core.db_comments import apply_model_comments
 from apps.core.models import OwnedModel, TimestampedModel
 from apps.projects.models import Project
 
@@ -10,6 +11,7 @@ class UiSuite(OwnedModel):
     description = models.TextField("套件描述", blank=True)
 
     class Meta:
+        db_table_comment = 'UI测试套件表：组织UI自动化用例的集合。'
         verbose_name = "UI测试套件"
         verbose_name_plural = "UI测试套件"
         unique_together = [("project", "name")]
@@ -37,6 +39,7 @@ class UiCase(OwnedModel):
     is_active = models.BooleanField("启用", default=True)
 
     class Meta:
+        db_table_comment = 'UI测试用例表：维护浏览器、起始地址、步骤和断言。'
         verbose_name = "UI测试用例"
         verbose_name_plural = "UI测试用例"
         ordering = ["sort_order", "id"]
@@ -55,6 +58,7 @@ class UiPage(OwnedModel):
     is_active = models.BooleanField("启用", default=True)
 
     class Meta:
+        db_table_comment = 'UI页面目录表：按套件维护页面树结构。'
         verbose_name = "UI页面"
         verbose_name_plural = "UI页面"
         unique_together = [("suite", "parent", "name")]
@@ -82,6 +86,7 @@ class UiElement(OwnedModel):
     is_active = models.BooleanField("启用", default=True)
 
     class Meta:
+        db_table_comment = 'UI定位元素表：维护页面元素的定位方式和选择器。'
         verbose_name = "UI定位元素"
         verbose_name_plural = "UI定位元素"
         unique_together = [("suite", "name")]
@@ -113,6 +118,7 @@ class UiAction(OwnedModel):
     is_active = models.BooleanField("启用", default=True)
 
     class Meta:
+        db_table_comment = 'UI元素操作字典表：维护可复用的UI动作类型和默认参数。'
         verbose_name = "UI元素操作"
         verbose_name_plural = "UI元素操作"
         unique_together = [("name", "action")]
@@ -120,3 +126,46 @@ class UiAction(OwnedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+apply_model_comments(UiSuite, "UI测试套件表：组织UI自动化用例的集合。", {
+    "project": "所属项目ID。",
+    "name": "套件名称。",
+    "description": "套件说明。",
+})
+apply_model_comments(UiCase, "UI测试用例表：维护浏览器、起始地址、步骤和断言。", {
+    "suite": "兼容旧结构的所属套件ID。",
+    "name": "用例名称。",
+    "browser": "执行浏览器类型。",
+    "start_url": "起始访问地址。",
+    "steps": "UI操作步骤JSON。",
+    "assertions": "UI断言配置。",
+    "sort_order": "排序值。",
+    "is_active": "是否启用。",
+})
+apply_model_comments(UiPage, "UI页面目录表：按套件维护页面树结构。", {
+    "suite": "所属UI套件ID。",
+    "parent": "父级页面ID。",
+    "name": "页面名称。",
+    "path": "页面路径。",
+    "description": "页面说明。",
+    "sort_order": "排序值。",
+    "is_active": "是否启用。",
+})
+apply_model_comments(UiElement, "UI定位元素表：维护页面元素的定位方式和选择器。", {
+    "suite": "所属UI套件ID。",
+    "page_node": "所属页面节点ID。",
+    "name": "元素名称。",
+    "page": "页面名称快照。",
+    "locator_type": "定位方式。",
+    "selector": "定位表达式。",
+    "description": "元素说明。",
+    "is_active": "是否启用。",
+})
+apply_model_comments(UiAction, "UI元素操作字典表：维护可复用的UI动作类型和默认参数。", {
+    "name": "操作名称。",
+    "action": "动作编码。",
+    "default_value": "默认输入值或期望值。",
+    "description": "操作说明。",
+    "is_active": "是否启用。",
+})

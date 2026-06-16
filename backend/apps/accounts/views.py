@@ -25,23 +25,55 @@ from apps.accounts.services import (
     ensure_builtin_roles,
     ensure_profile,
     revoke_user_sessions,
+    record_failed_login,
     write_audit,
     write_login_attempt,
+)
+from apps.accounts.security import (
+    clear_auth_cookies,
+    create_login_crypto_payload,
+    decrypt_login_password,
+    get_refresh_token_from_request,
+    issue_tokens,
+    rotate_tokens,
+    set_auth_cookies,
 )
 
 
 User = get_user_model()
 
 
+class CookieAgnosticAuthentication:
+    def authenticate(self, request):
+        return None
+
+
+class LoginCryptoView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = [CookieAgnosticAuthentication]
+
+    def get(self, request):
+        return response.Response(create_login_crypto_payload())
+
+
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = [CookieAgnosticAuthentication]
     throttle_scope = "login"
 
     def post(self, request):
-        serializer = LoginSerializer(data=request.data, context={"request": request})
         username = request.data.get("username", "")
+        password = request.data.get("password", "")
+        if request.data.get("password_cipher"):
+            password = decrypt_login_password(
+                key_id=request.data.get("key_id", ""),
+                nonce=request.data.get("nonce", ""),
+                password_cipher=request.data.get("password_cipher", ""),
+            )
+        serializer = LoginSerializer(data={**request.data, "password": password}, context={"request": request, "password": password})
         if not serializer.is_valid():
             write_login_attempt(request, username, False, str(serializer.errors))
+            record_failed_login(username)
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         user = serializer.validated_data["user"]
@@ -50,14 +82,28 @@ class LoginView(APIView):
         profile.locked_until = None
         profile.status = UserProfile.Status.ACTIVE
         profile.save(update_fields=["failed_login_count", "locked_until", "status", "updated_at"])
-        AuthToken.objects.filter(user=user).delete()
-        token = AuthToken.objects.create(user=user)
-        create_user_session(request, user, token, serializer.validated_data.get("remember_me", False))
+        AuthToken.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+        issued = issue_tokens(user, request, serializer.validated_data.get("remember_me", False))
+        create_user_session(request, user, issued.record, serializer.validated_data.get("remember_me", False))
         user.last_login = timezone.now()
         user.save(update_fields=["last_login"])
         write_login_attempt(request, username, True)
         write_audit(request=request, user=user, action_type=AuditLog.ActionType.LOGIN, module="auth", summary="用户登录")
-        return response.Response({"token": token.key, "user": AuthUserSerializer(user).data})
+        resp = response.Response({"authenticated": True, "user": AuthUserSerializer(user).data})
+        set_auth_cookies(resp, issued)
+        return resp
+
+
+class RefreshTokenView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = [CookieAgnosticAuthentication]
+
+    def post(self, request):
+        issued = rotate_tokens(get_refresh_token_from_request(request))
+        UserSession.objects.filter(token_key=issued.record.key, revoked_at__isnull=True).update(last_active_at=timezone.now())
+        resp = response.Response({"authenticated": True})
+        set_auth_cookies(resp, issued)
+        return resp
 
 
 class LogoutView(APIView):
@@ -67,9 +113,11 @@ class LogoutView(APIView):
         token_key = request.auth.key if request.auth else ""
         if token_key:
             UserSession.objects.filter(token_key=token_key, revoked_at__isnull=True).update(revoked_at=timezone.now())
-            AuthToken.objects.filter(key=token_key).delete()
+            AuthToken.objects.filter(key=token_key).update(revoked_at=timezone.now())
         write_audit(request=request, action_type=AuditLog.ActionType.LOGOUT, module="auth", summary="用户退出")
-        return response.Response(status=status.HTTP_204_NO_CONTENT)
+        resp = response.Response(status=status.HTTP_204_NO_CONTENT)
+        clear_auth_cookies(resp)
+        return resp
 
 
 class MeView(APIView):

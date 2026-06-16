@@ -7,7 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext .vue,.ts --fix"
+    "lint": "eslint . --ext .vue,.ts --fix",
+    "scan:mojibake": "node ../scripts/scan-mojibake.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

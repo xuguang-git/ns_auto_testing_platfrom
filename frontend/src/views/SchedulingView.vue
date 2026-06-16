@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="scheduling-page">
     <PageHeader title="调度计划" description="按 Cron 定时执行测试计划，支持启停、立即运行和最近执行状态追踪。" />
 
@@ -16,6 +16,7 @@
       <el-table :data="filteredSchedules" v-loading="loading" stripe height="100%">
         <el-table-column prop="name" label="任务名称" min-width="180" />
         <el-table-column prop="plan_name" label="测试计划" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="environment_name" label="运行环境" min-width="130" show-overflow-tooltip />
         <el-table-column prop="cron" label="Cron" width="150" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
@@ -47,8 +48,13 @@
           <el-input v-model="form.name" placeholder="每日冒烟测试" />
         </el-form-item>
         <el-form-item label="测试计划" required>
-          <el-select v-model="form.plan" filterable style="width: 100%">
+          <el-select v-model="form.plan" filterable style="width: 100%" @change="onPlanChange">
             <el-option v-for="plan in plans" :key="plan.id" :label="plan.name" :value="plan.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="运行环境" required>
+          <el-select v-model="form.environment" filterable style="width: 100%">
+            <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="Cron" required>
@@ -78,12 +84,15 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { platformApi, unwrapList } from "@/api/platform";
 import PageHeader from "@/components/PageHeader.vue";
 
-interface TestPlan { id: number; name: string; is_active: boolean }
+interface TestPlan { id: number; name: string; is_active: boolean; environment?: number }
+interface Environment { id: number; name: string; is_default?: boolean }
 interface ScheduledPlan {
   id: number;
   name: string;
   plan: number;
   plan_name: string;
+  environment?: number;
+  environment_name?: string;
   cron: string;
   is_active: boolean;
   last_run_at?: string;
@@ -101,7 +110,8 @@ const keyword = ref("");
 const statusFilter = ref("");
 const schedules = ref<ScheduledPlan[]>([]);
 const plans = ref<TestPlan[]>([]);
-const form = reactive({ id: undefined as number | undefined, name: "", plan: undefined as number | undefined, cron: "0 9 * * *", is_active: true });
+const environments = ref<Environment[]>([]);
+const form = reactive({ id: undefined as number | undefined, name: "", plan: undefined as number | undefined, environment: undefined as number | undefined, cron: "0 9 * * *", is_active: true });
 const cronPresets = [
   { label: "每 30 分钟", value: "*/30 * * * *" },
   { label: "每小时", value: "0 * * * *" },
@@ -125,33 +135,41 @@ const statusBadge = (status?: string) => {
 const load = async () => {
   loading.value = true;
   try {
-    const [scheduleResp, planResp] = await Promise.all([platformApi.scheduledPlans(), platformApi.testPlans()]);
+    const [scheduleResp, planResp, envResp] = await Promise.all([platformApi.scheduledPlans(), platformApi.testPlans(), platformApi.environments()]);
     schedules.value = unwrapList<ScheduledPlan>(scheduleResp.data);
     plans.value = unwrapList<TestPlan>(planResp.data).filter((item) => item.is_active !== false);
+    environments.value = unwrapList<Environment>(envResp.data);
   } finally {
     loading.value = false;
   }
 };
 
 const openDialog = (row?: ScheduledPlan) => {
+  const plan = plans.value.find((item) => item.id === row?.plan) || plans.value[0];
   Object.assign(form, {
     id: row?.id,
     name: row?.name || "",
-    plan: row?.plan || plans.value[0]?.id,
+    plan: row?.plan || plan?.id,
+    environment: row?.environment || plan?.environment || environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id,
     cron: row?.cron || "0 9 * * *",
     is_active: row?.is_active ?? true,
   });
   dialogVisible.value = true;
 };
 
+const onPlanChange = () => {
+  const plan = plans.value.find((item) => item.id === form.plan);
+  form.environment = plan?.environment || environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id;
+};
+
 const save = async () => {
-  if (!form.name.trim() || !form.plan || !form.cron.trim()) {
-    ElMessage.warning("请填写任务名称、测试计划和 Cron");
+  if (!form.name.trim() || !form.plan || !form.environment || !form.cron.trim()) {
+    ElMessage.warning("请填写任务名称、测试计划、运行环境和 Cron");
     return;
   }
   saving.value = true;
   try {
-    const payload = { name: form.name.trim(), plan: form.plan, cron: form.cron.trim(), is_active: form.is_active };
+    const payload = { name: form.name.trim(), plan: form.plan, environment: form.environment, cron: form.cron.trim(), is_active: form.is_active };
     if (form.id) await platformApi.updateScheduledPlan(form.id, payload);
     else await platformApi.createScheduledPlan(payload);
     ElMessage.success("调度任务已保存");
@@ -188,3 +206,5 @@ const deleteSchedule = async (row: ScheduledPlan) => {
 
 onMounted(load);
 </script>
+
+

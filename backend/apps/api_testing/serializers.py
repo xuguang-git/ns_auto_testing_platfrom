@@ -68,6 +68,9 @@ class ApiDefinitionSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin
         return attrs
 
     def get_test_case_count(self, obj):
+        request = self.context.get("request")
+        if request and request.query_params.get("single_case_tree") and obj.status != ApiDefinition.Status.RELEASED:
+            return None
         return obj.test_cases.count()
 
     def get_mock_count(self, obj):

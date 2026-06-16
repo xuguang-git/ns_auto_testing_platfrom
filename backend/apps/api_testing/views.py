@@ -51,9 +51,17 @@ class ApiDefinitionViewSet(OperatorAuditModelViewSet):
         )
         self.write_operator_audit(AuditLog.ActionType.CREATE, instance)
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.query_params.get("single_case_tree"):
+            return queryset.filter(is_active=True).exclude(status=ApiDefinition.Status.DEPRECATED)
+        return queryset
+
     @decorators.action(detail=False, methods=["post"], url_path="debug", throttle_scope="api_debug")
     def debug(self, request):
         result = execute_debug_request(request.data)
+        if result.get("ok") is False:
+            return response.Response(result, status=status.HTTP_400_BAD_REQUEST)
         return response.Response(result, status=status.HTTP_200_OK)
 
 
@@ -126,6 +134,7 @@ class ApiStepViewSet(OperatorAuditModelViewSet):
     permission_classes = [action_permission("api.read", "api.write", "api.delete")]
     filterset_fields = ["scenario", "platform", "method", "is_active"]
     search_fields = ["name", "path"]
+    ordering_fields = ["sort_order", "created_at", "updated_at"]
     audit_module = "api_step"
 
 

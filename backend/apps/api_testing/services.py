@@ -12,12 +12,13 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.projects.db_services import execute_test_data_source
-from apps.projects.models import Environment
-from apps.projects.models import TestDataSource
+from apps.projects.models import Environment, TestDataSource
 
 
 VAR_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_.-]+)\s*}}")
 ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+REQUEST_CONTROL_CACHE_SECONDS = 60
+_REQUEST_CONTROL_METHOD_CACHE: dict[int, tuple[float, frozenset[str] | None]] = {}
 BLOCKED_REQUEST_HEADERS = {
     "host",
     "content-length",
@@ -56,6 +57,18 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "error": str(exc),
         }
     method = (payload.get("method") or "GET").upper()
+    if environment and not _is_method_allowed_by_environment(environment, method):
+        message = f"当前环境不允许执行 {method} 请求，请联系管理员"
+        return {
+            "ok": False,
+            "passed": False,
+            "request": {"method": method, "url": payload.get("path") or payload.get("url") or "/"},
+            "response": {"elapsed_ms": 0},
+            "assertions": [],
+            "variables": extracted_variables,
+            "logs": [*data_logs, message],
+            "error": message,
+        }
     path = payload.get("path") or payload.get("url") or "/"
     base_url = _get_base_url(environment, platform)
     url = _build_url(base_url, path)
@@ -211,6 +224,38 @@ def _get_environment(environment_id):
         return Environment.objects.get(pk=environment_id)
     except Environment.DoesNotExist:
         return None
+
+
+def _is_method_allowed_by_environment(environment, method: str) -> bool:
+    allowed_methods = _get_environment_allowed_methods(environment.id)
+    if allowed_methods is None:
+        return True
+    return method.upper() in allowed_methods
+
+
+def _get_environment_allowed_methods(environment_id: int) -> frozenset[str] | None:
+    now = time.monotonic()
+    cached = _REQUEST_CONTROL_METHOD_CACHE.get(environment_id)
+    if cached and now - cached[0] < REQUEST_CONTROL_CACHE_SECONDS:
+        return cached[1]
+    controls = Environment.objects.filter(pk=environment_id).values_list("request_controls__methods", "request_controls__is_enabled")
+    allowed: set[str] = set()
+    has_enabled_control = False
+    for methods, is_enabled in controls:
+        if not is_enabled:
+            continue
+        has_enabled_control = True
+        allowed.update(str(item).upper() for item in methods or [])
+    value = frozenset(allowed) if has_enabled_control else None
+    _REQUEST_CONTROL_METHOD_CACHE[environment_id] = (now, value)
+    return value
+
+
+def clear_environment_request_control_cache(environment_id: int | None = None) -> None:
+    if environment_id is None:
+        _REQUEST_CONTROL_METHOD_CACHE.clear()
+        return
+    _REQUEST_CONTROL_METHOD_CACHE.pop(environment_id, None)
 
 
 def _build_variables(environment, platform: str, extra: dict[str, Any]) -> dict[str, Any]:
