@@ -40,9 +40,9 @@ class ApiSuiteAdmin(admin.ModelAdmin):
 
 @admin.register(ApiScenario)
 class ApiScenarioAdmin(admin.ModelAdmin):
-    list_display = ["suite", "name", "priority", "is_active", "sort_order"]
-    search_fields = ["name", "suite__name"]
-    list_filter = ["priority", "is_active"]
+    list_display = ["suite", "name", "environment", "priority", "is_active", "sort_order"]
+    search_fields = ["name", "suite__name", "environment__name"]
+    list_filter = ["priority", "is_active", "environment"]
 
 
 @admin.register(ApiStep)

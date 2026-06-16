@@ -12,6 +12,7 @@ perf_results/
 backend/perf_results/
 .env
 *.log
+ui_debug_*.png
 celerybeat-schedule*
 backend/celerybeat-schedule*
 

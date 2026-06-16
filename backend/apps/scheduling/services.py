@@ -26,10 +26,14 @@ def compute_next_run_at(cron: str, base=None):
 
 def trigger_scheduled_plan(schedule: ScheduledPlan) -> TestRun:
     with transaction.atomic():
-        schedule = ScheduledPlan.objects.select_for_update().select_related("plan", "plan__environment").get(pk=schedule.pk)
+        schedule = (
+            ScheduledPlan.objects.select_for_update()
+            .select_related("environment", "plan", "plan__environment")
+            .get(pk=schedule.pk)
+        )
         test_run = TestRun.objects.create(
             plan=schedule.plan,
-            environment=schedule.plan.environment,
+            environment=schedule.environment or schedule.plan.environment,
             trigger_type=TestRun.TriggerType.SCHEDULE,
         )
         schedule.last_run_at = timezone.now()
@@ -58,7 +62,7 @@ def trigger_scheduled_plan(schedule: ScheduledPlan) -> TestRun:
 
 def dispatch_due_schedules(now=None) -> int:
     now = now or timezone.now()
-    due_schedules = ScheduledPlan.objects.select_related("plan").filter(
+    due_schedules = ScheduledPlan.objects.select_related("environment", "plan", "plan__environment").filter(
         is_active=True,
         plan__is_active=True,
         next_run_at__lte=now,

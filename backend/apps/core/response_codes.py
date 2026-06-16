@@ -1,0 +1,26 @@
+SUCCESS = 0
+BAD_REQUEST = 40000
+UNAUTHORIZED = 40100
+FORBIDDEN = 40300
+NOT_FOUND = 40400
+VALIDATION_ERROR = 42200
+THROTTLED = 42900
+SERVER_ERROR = 50000
+
+
+HTTP_STATUS_CODE_MAP = {
+    400: BAD_REQUEST,
+    401: UNAUTHORIZED,
+    403: FORBIDDEN,
+    404: NOT_FOUND,
+    422: VALIDATION_ERROR,
+    429: THROTTLED,
+}
+
+
+def code_for_status(status_code: int) -> int:
+    if 200 <= status_code < 300:
+        return SUCCESS
+    if status_code >= 500:
+        return SERVER_ERROR
+    return HTTP_STATUS_CODE_MAP.get(status_code, BAD_REQUEST)

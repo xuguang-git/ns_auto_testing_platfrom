@@ -23,8 +23,8 @@
     <section class="work-panel">
       <div class="work-toolbar">
         <div class="toolbar-left">
-          <el-input v-model="keyword" clearable placeholder="搜索变量 key、说明" style="width: 300px" />
-          <el-select v-model="platformFilter" clearable placeholder="平台" style="width: 150px">
+          <el-input v-if="activeEnvTab === 'variables'" v-model="keyword" clearable placeholder="搜索变量 key、说明" style="width: 300px" />
+          <el-select v-if="activeEnvTab === 'variables'" v-model="platformFilter" clearable placeholder="平台" style="width: 150px">
             <el-option v-for="platform in platformOptions" :key="platform.code" :label="platform.name" :value="platform.code" />
           </el-select>
         </div>
@@ -32,7 +32,8 @@
           <el-button @click="load">刷新</el-button>
           <el-button :disabled="!selectedEnvironment" @click="openEnvEdit">编辑环境</el-button>
           <el-button :disabled="!selectedEnvironment" class="danger-link" @click="removeEnvironment">删除环境</el-button>
-          <el-button type="primary" :disabled="!selectedEnvironment" @click="openVarCreate">新增变量</el-button>
+          <el-button v-if="activeEnvTab === 'preRequest'" type="primary" :disabled="!selectedEnvironment" @click="openPreRequestCreate">新增前置操作</el-button>
+          <el-button v-if="activeEnvTab === 'variables'" type="primary" :disabled="!selectedEnvironment" @click="openVarCreate">新增变量</el-button>
         </div>
       </div>
 
@@ -72,69 +73,79 @@
         </el-card>
 
         <el-card v-if="selectedEnvironment" shadow="never" class="panel-card">
-          <template #header>
-            <div class="card-header">
-              <span>全局前置操作</span>
-              <div class="card-header-actions">
-                <el-tag :type="preRequestOperations.length ? 'success' : 'info'">共 {{ preRequestOperations.length }} 个</el-tag>
-                <el-button size="small" type="primary" @click="openPreRequestCreate">新增前置操作</el-button>
+          <el-tabs v-model="activeEnvTab" class="env-tabs">
+            <el-tab-pane label="全局前置操作" name="preRequest">
+              <template #label>全局前置操作 <el-tag size="small" type="info">{{ preRequestOperations.length }}</el-tag></template>
+              <div class="tab-action-bar">
+                <strong>全局前置操作</strong>
+                <el-button size="small" type="primary" :disabled="!selectedEnvironment" @click="openPreRequestCreate">新增前置操作</el-button>
               </div>
-            </div>
-          </template>
-          <el-table :data="preRequestOperations" stripe>
-            <el-table-column prop="name" label="操作名称" min-width="160" show-overflow-tooltip />
-            <el-table-column label="生效模块" min-width="240" show-overflow-tooltip>
-              <template #default="{ row }">{{ operationScopeText(row) }}</template>
-            </el-table-column>
-            <el-table-column label="Token 变量" width="130">
-              <template #default="{ row }">{{ row.config?.token_key || "token" }}</template>
-            </el-table-column>
-            <el-table-column label="登录请求" min-width="240" show-overflow-tooltip>
-              <template #default="{ row }">{{ operationLoginText(row) }}</template>
-            </el-table-column>
-            <el-table-column label="状态" width="100">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.is_enabled ? 'success' : 'info'">{{ row.is_enabled ? "启用" : "停用" }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="160" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openPreRequestEdit(row)">编辑</el-button>
-                <el-button link class="danger-link" @click="removePreRequest(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
+              <el-table :data="preRequestOperations" stripe>
+                <el-table-column prop="name" label="操作名称" min-width="160" show-overflow-tooltip />
+                <el-table-column label="生效模块" min-width="240" show-overflow-tooltip>
+                  <template #default="{ row }">{{ operationScopeText(row) }}</template>
+                </el-table-column>
+                <el-table-column label="Token 变量" width="130">
+                  <template #default="{ row }">{{ row.config?.token_key || "token" }}</template>
+                </el-table-column>
+                <el-table-column label="登录请求" min-width="240" show-overflow-tooltip>
+                  <template #default="{ row }">{{ operationLoginText(row) }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="100">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="row.is_enabled ? 'success' : 'info'">{{ row.is_enabled ? "启用" : "停用" }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="160" fixed="right">
+                  <template #default="{ row }">
+                    <el-button link type="primary" @click="openPreRequestEdit(row)">编辑</el-button>
+                    <el-button link class="danger-link" @click="removePreRequest(row)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
 
-        <el-card shadow="never" class="panel-card">
-          <template #header>
-            <div class="card-header">
-              <span>环境变量</span>
-              <span>共 {{ filteredVariables.length }} 个</span>
-            </div>
-          </template>
-          <el-table :data="filteredVariables" v-loading="loading" stripe>
-            <el-table-column prop="key" label="变量 Key" min-width="170" />
-            <el-table-column label="变量值" min-width="220" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.display_value ?? row.value }}</template>
-            </el-table-column>
-            <el-table-column label="平台" width="120">
-              <template #default="{ row }">{{ row.platform ? platformName(row.platform) : "全局" }}</template>
-            </el-table-column>
-            <el-table-column prop="scope" label="作用域" width="120" />
-            <el-table-column label="敏感" width="90">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.is_secret ? 'warning' : 'info'">{{ row.is_secret ? "是" : "否" }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
-            <el-table-column label="操作" width="160" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openVarEdit(row)">编辑</el-button>
-                <el-button link class="danger-link" @click="removeVariable(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+            <el-tab-pane label="环境变量" name="variables">
+              <template #label>环境变量 <el-tag size="small" type="info">{{ filteredVariables.length }}</el-tag></template>
+              <div class="tab-action-bar">
+                <strong>环境变量</strong>
+                <el-button size="small" type="primary" :disabled="!selectedEnvironment" @click="openVarCreate">新增变量</el-button>
+              </div>
+              <el-table :data="filteredVariables" v-loading="loading" stripe>
+                <el-table-column prop="key" label="变量 Key" min-width="170" />
+                <el-table-column label="变量值" min-width="220" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.display_value ?? row.value }}</template>
+                </el-table-column>
+                <el-table-column label="平台" width="120">
+                  <template #default="{ row }">{{ row.platform ? platformName(row.platform) : "全局" }}</template>
+                </el-table-column>
+                <el-table-column prop="scope" label="作用域" width="120" />
+                <el-table-column label="敏感" width="90">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="row.is_secret ? 'warning' : 'info'">{{ row.is_secret ? "是" : "否" }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
+                <el-table-column label="操作" width="160" fixed="right">
+                  <template #default="{ row }">
+                    <el-button link type="primary" @click="openVarEdit(row)">编辑</el-button>
+                    <el-button link class="danger-link" @click="removeVariable(row)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+
+            <el-tab-pane label="请求控件" name="requestControl">
+              <template #label>请求控件</template>
+              <div class="request-control-panel">
+                <div class="request-control-label">运行请求方式</div>
+                <el-checkbox-group v-model="requestControlForm.methods" class="method-control-group">
+                  <el-checkbox-button v-for="method in httpMethods" :key="method" :value="method">{{ method }}</el-checkbox-button>
+                </el-checkbox-group>
+                <el-button type="primary" :loading="savingRequestControl" :disabled="!selectedEnvironment" @click="applyRequestControl">应用</el-button>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
         </el-card>
       </div>
     </section>
@@ -317,6 +328,7 @@ import { platformApi, unwrapList } from "@/api/platform";
 
 const loading = ref(false);
 const saving = ref(false);
+const savingRequestControl = ref(false);
 const keyword = ref("");
 const platformFilter = ref("");
 const projects = ref<any[]>([]);
@@ -327,6 +339,7 @@ const selectedEnvironment = ref<any>();
 const envDialogVisible = ref(false);
 const preRequestDialogVisible = ref(false);
 const varDialogVisible = ref(false);
+const activeEnvTab = ref("preRequest");
 const editingEnvId = ref<number>();
 const editingPreRequestId = ref<number>();
 const editingVarId = ref<number>();
@@ -372,11 +385,17 @@ const varForm = reactive({
   description: "",
 });
 
+const requestControlForm = reactive({
+  methods: [] as string[],
+});
+
 const platformCode = (platform: any) => platform.code?.toUpperCase?.() || platform.code || "";
 const platformOptions = computed(() => platforms.value.map((item) => ({ ...item, code: platformCode(item) })));
 const modulePlatformCode = (module: any) => module.platform || platformCode(platforms.value.find((item) => item.id === module.managed_platform));
 const modulesForPlatform = (code: string) => modules.value.filter((item) => modulePlatformCode(item) === code);
 const preRequestOperations = computed(() => selectedEnvironment.value?.pre_request_operations || []);
+const requestControls = computed(() => selectedEnvironment.value?.request_controls || []);
+const defaultRequestControl = computed(() => requestControls.value[0]);
 const variables = computed(() => selectedEnvironment.value?.variable_items || []);
 const filteredVariables = computed(() =>
   variables.value.filter((item: any) => {
@@ -429,6 +448,7 @@ const ensureProject = async () => {
 
 const selectEnvironment = (env: any) => {
   selectedEnvironment.value = env;
+  resetRequestControlForm();
 };
 
 const load = async () => {
@@ -440,6 +460,7 @@ const load = async () => {
     platforms.value = unwrapList(platformResp.data);
     modules.value = unwrapList(moduleResp.data);
     selectedEnvironment.value = environments.value.find((item) => item.id === selectedEnvironment.value?.id) || environments.value[0];
+    resetRequestControlForm();
   } finally {
     loading.value = false;
   }
@@ -470,6 +491,10 @@ const parseBodyValue = (value: string) => {
 const bodyToText = (value: unknown) => {
   if (value === undefined || value === null || value === "") return "";
   return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const resetRequestControlForm = () => {
+  requestControlForm.methods = [...(defaultRequestControl.value?.methods || httpMethods)];
 };
 
 const resetPreRequestForm = (config: any = {}, operation: any = {}) => {
@@ -712,6 +737,36 @@ const removePreRequest = async (row: any) => {
   await platformApi.deleteEnvironmentPreRequestOperation(row.id);
   ElMessage.success("前置操作已删除");
   await load();
+};
+
+const applyRequestControl = async () => {
+  if (!selectedEnvironment.value) return;
+  if (!requestControlForm.methods.length) {
+    ElMessage.warning("请至少选择一个允许请求方式");
+    return;
+  }
+  savingRequestControl.value = true;
+  try {
+    const payload = {
+      environment: selectedEnvironment.value.id,
+      name: "运行请求方式",
+      methods: requestControlForm.methods,
+      is_enabled: true,
+      description: "限制当前环境允许执行的 HTTP 请求方式",
+    };
+    if (defaultRequestControl.value?.id) {
+      await platformApi.updateEnvironmentRequestControl(defaultRequestControl.value.id, payload);
+    } else {
+      await platformApi.createEnvironmentRequestControl(payload);
+    }
+    ElMessage.success("请求控件已应用");
+    await load();
+  } catch (error: any) {
+    const data = error?.response?.data;
+    ElMessage.error(data?.detail || data?.methods?.[0] || String(data || error?.message || "应用请求控件失败"));
+  } finally {
+    savingRequestControl.value = false;
+  }
 };
 
 const openVarCreate = () => {

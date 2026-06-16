@@ -1,15 +1,23 @@
 from django.conf import settings
 from django.db import models
 
+from apps.core.db_comments import apply_model_comments
 from apps.core.models import TimestampedModel
 
 
 class AuthToken(models.Model):
     key = models.CharField(max_length=128, primary_key=True)
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="strong_auth_token")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="strong_auth_tokens")
+    access_token_hash = models.CharField(max_length=128, unique=True, null=True, blank=True)
+    refresh_token_hash = models.CharField(max_length=128, unique=True, null=True, blank=True)
+    access_expires_at = models.DateTimeField(null=True, blank=True)
+    refresh_expires_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
     created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table_comment = '登录Token表：保存用户API访问Token。'
         ordering = ["-created"]
 
     def save(self, *args, **kwargs):
@@ -26,6 +34,10 @@ class AuthToken(models.Model):
 
     def __str__(self) -> str:
         return self.key
+
+    @property
+    def is_revoked(self) -> bool:
+        return self.revoked_at is not None
 
 
 class Permission(TimestampedModel):
@@ -44,6 +56,7 @@ class Permission(TimestampedModel):
     description = models.CharField(max_length=255, blank=True)
 
     class Meta:
+        db_table_comment = '权限点表：平台功能权限的最小授权单元。'
         ordering = ["module", "action", "code"]
 
     def __str__(self) -> str:
@@ -66,6 +79,7 @@ class Role(TimestampedModel):
     permissions = models.ManyToManyField(Permission, blank=True, related_name="roles")
 
     class Meta:
+        db_table_comment = '角色表：用户角色及其权限集合。'
         ordering = ["-is_builtin", "id"]
 
     def __str__(self) -> str:
@@ -91,6 +105,7 @@ class UserProfile(TimestampedModel):
     must_change_password = models.BooleanField(default=False)
 
     class Meta:
+        db_table_comment = '用户资料表：扩展Django用户的角色、状态和安全信息。'
         ordering = ["user__username"]
 
     def __str__(self) -> str:
@@ -108,6 +123,7 @@ class UserSession(TimestampedModel):
     revoked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        db_table_comment = '用户会话表：记录登录设备、IP和Token活跃状态。'
         ordering = ["-last_active_at", "-created_at"]
 
     @property
@@ -123,6 +139,7 @@ class LoginAttempt(TimestampedModel):
     user_agent = models.TextField(blank=True)
 
     class Meta:
+        db_table_comment = '登录尝试表：记录登录成功/失败和失败原因。'
         ordering = ["-created_at"]
 
 
@@ -152,4 +169,69 @@ class AuditLog(TimestampedModel):
     success = models.BooleanField(default=True)
 
     class Meta:
+        db_table_comment = '审计日志表：记录用户关键操作和目标对象。'
         ordering = ["-created_at"]
+
+
+apply_model_comments(AuthToken, "登录Token表：保存用户API访问Token。", {
+    "key": "Token字符串主键。",
+    "user": "绑定用户ID。",
+    "created": "Token创建时间。",
+})
+apply_model_comments(Permission, "权限点表：平台功能权限的最小授权单元。", {
+    "code": "权限编码，如 api.read。",
+    "module": "权限所属模块。",
+    "action": "权限动作。",
+    "name": "权限名称。",
+    "description": "权限说明。",
+})
+apply_model_comments(Role, "角色表：用户角色及其权限集合。", {
+    "name": "角色名称。",
+    "code": "角色编码。",
+    "description": "角色说明。",
+    "is_builtin": "是否系统内置角色。",
+    "is_active": "是否启用。",
+})
+apply_model_comments(UserProfile, "用户资料表：扩展Django用户的角色、状态和安全信息。", {
+    "user": "关联Django用户ID。",
+    "nickname": "用户昵称。",
+    "role": "用户角色ID。",
+    "phone": "手机号。",
+    "avatar": "头像URL。",
+    "wechat_work_id": "企业微信用户ID。",
+    "status": "账号状态。",
+    "failed_login_count": "连续登录失败次数。",
+    "locked_until": "锁定截止时间。",
+    "password_changed_at": "最近密码修改时间。",
+    "must_change_password": "是否必须修改密码。",
+})
+apply_model_comments(UserSession, "用户会话表：记录登录设备、IP和Token活跃状态。", {
+    "user": "关联用户ID。",
+    "token_key": "登录Token Key。",
+    "device": "登录设备描述。",
+    "ip_address": "登录IP地址。",
+    "user_agent": "浏览器User-Agent。",
+    "last_active_at": "最近活跃时间。",
+    "expires_at": "会话过期时间。",
+    "revoked_at": "会话撤销时间。",
+})
+apply_model_comments(LoginAttempt, "登录尝试表：记录登录成功/失败和失败原因。", {
+    "username": "尝试登录的用户名。",
+    "ip_address": "来源IP地址。",
+    "success": "是否登录成功。",
+    "reason": "失败或拦截原因。",
+    "user_agent": "浏览器User-Agent。",
+})
+apply_model_comments(AuditLog, "审计日志表：记录用户关键操作和目标对象。", {
+    "user": "操作用户ID。",
+    "username": "操作用户名快照。",
+    "action_type": "操作类型。",
+    "module": "业务模块。",
+    "target_type": "目标对象类型。",
+    "target_id": "目标对象ID。",
+    "summary": "操作摘要。",
+    "detail": "操作详情JSON。",
+    "ip_address": "操作来源IP。",
+    "user_agent": "浏览器User-Agent。",
+    "success": "操作是否成功。",
+})

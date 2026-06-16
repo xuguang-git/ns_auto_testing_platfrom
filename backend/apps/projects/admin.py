@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.projects.models import DatabaseConnection, Environment, EnvironmentPreRequestOperation, EnvironmentVariable, Project, TestDataSource
+from apps.projects.models import DatabaseConnection, Environment, EnvironmentPreRequestOperation, EnvironmentRequestControl, EnvironmentVariable, Project, TestDataSource
 
 
 @admin.register(Project)
@@ -30,6 +30,13 @@ class EnvironmentPreRequestOperationAdmin(admin.ModelAdmin):
     search_fields = ["name", "environment__name"]
     list_filter = ["environment", "is_enabled"]
     filter_horizontal = ["modules"]
+
+
+@admin.register(EnvironmentRequestControl)
+class EnvironmentRequestControlAdmin(admin.ModelAdmin):
+    list_display = ["environment", "name", "methods", "is_enabled", "updated_at"]
+    search_fields = ["name", "description", "environment__name"]
+    list_filter = ["environment", "is_enabled"]
 
 
 @admin.register(DatabaseConnection)

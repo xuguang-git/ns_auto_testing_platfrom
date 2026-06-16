@@ -11,6 +11,8 @@ from apps.accounts.models import AuditLog, LoginAttempt, Permission, Role, UserP
 
 
 PASSWORD_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,32}$")
+MAX_LOGIN_FAILURES = 5
+LOGIN_LOCK_MINUTES = 15
 
 PERMISSION_DEFINITIONS = [
     ("platform.read", "platform", "read", "平台查看"),
@@ -22,6 +24,9 @@ PERMISSION_DEFINITIONS = [
     ("environment.read", "environment", "read", "环境查看"),
     ("environment.write", "environment", "write", "环境维护"),
     ("environment.delete", "environment", "delete", "环境删除"),
+    ("environment.request_control.read", "environment_request_control", "read", "请求控件查看"),
+    ("environment.request_control.write", "environment_request_control", "write", "请求控件维护"),
+    ("environment.request_control.delete", "environment_request_control", "delete", "请求控件删除"),
     ("api.read", "api", "read", "接口查看"),
     ("api.write", "api", "write", "接口维护"),
     ("api.delete", "api", "delete", "接口删除"),
@@ -57,6 +62,9 @@ ROLE_PERMISSION_CODES = {
         "environment.read",
         "environment.write",
         "environment.delete",
+        "environment.request_control.read",
+        "environment.request_control.write",
+        "environment.request_control.delete",
         "api.read",
         "api.write",
         "api.delete",
@@ -79,6 +87,8 @@ ROLE_PERMISSION_CODES = {
         "module.read",
         "environment.read",
         "environment.write",
+        "environment.request_control.read",
+        "environment.request_control.write",
         "api.read",
         "api.write",
         "api.delete",
@@ -213,6 +223,20 @@ def write_login_attempt(request, username: str, success: bool, reason: str = "")
     )
 
 
+def record_failed_login(username: str) -> None:
+    if not username:
+        return
+    user = User.objects.filter(username=username).first()
+    if not user:
+        return
+    profile = ensure_profile(user)
+    profile.failed_login_count += 1
+    if profile.failed_login_count >= MAX_LOGIN_FAILURES:
+        profile.status = UserProfile.Status.LOCKED
+        profile.locked_until = timezone.now() + timedelta(minutes=LOGIN_LOCK_MINUTES)
+    profile.save(update_fields=["failed_login_count", "status", "locked_until", "updated_at"])
+
+
 def create_user_session(request, user, token, remember_me: bool = False) -> UserSession:
     expires_at = timezone.now() + (timedelta(days=30) if remember_me else timedelta(hours=2))
     return UserSession.objects.create(
@@ -227,7 +251,11 @@ def create_user_session(request, user, token, remember_me: bool = False) -> User
 
 
 def revoke_user_sessions(user) -> int:
-    return UserSession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+    count = UserSession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+    from apps.accounts.models import AuthToken
+
+    AuthToken.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+    return count
 
 
 def bootstrap_superuser_profile() -> None:
@@ -239,3 +267,4 @@ def bootstrap_superuser_profile() -> None:
         if profile.role_id != super_role.id:
             profile.role = super_role
             profile.save(update_fields=["role", "updated_at"])
+

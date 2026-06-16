@@ -10,10 +10,10 @@ from apps.test_runs.serializers import TestRunSerializer
 
 
 class ScheduledPlanViewSet(OperatorAuditModelViewSet):
-    queryset = ScheduledPlan.objects.select_related("plan", "plan__project").all()
+    queryset = ScheduledPlan.objects.select_related("environment", "plan", "plan__project").all()
     serializer_class = ScheduledPlanSerializer
     permission_classes = [action_permission("schedule.read", "schedule.write", "schedule.delete")]
-    filterset_fields = ["plan", "is_active", "last_status"]
+    filterset_fields = ["plan", "environment", "is_active", "last_status"]
     search_fields = ["name", "cron", "plan__name"]
     ordering_fields = ["next_run_at", "last_run_at", "created_at", "updated_at"]
     audit_module = "scheduled_plan"

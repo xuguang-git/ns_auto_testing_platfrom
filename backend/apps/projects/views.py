@@ -4,13 +4,15 @@ from rest_framework.response import Response
 from apps.accounts.models import AuditLog
 from apps.accounts.permissions import action_permission
 from apps.api_testing.models import ApiModule
+from apps.api_testing.services import clear_environment_request_control_cache
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.db_services import check_database_connection, execute_test_data_source, sync_configured_database_connections
-from apps.projects.models import DataFactoryCapability, DatabaseConnection, Environment, EnvironmentPreRequestOperation, EnvironmentVariable, Platform, Project, TestDataSource
+from apps.projects.models import DataFactoryCapability, DatabaseConnection, Environment, EnvironmentPreRequestOperation, EnvironmentRequestControl, EnvironmentVariable, Platform, Project, TestDataSource
 from apps.projects.serializers import (
     DataFactoryCapabilitySerializer,
     DatabaseConnectionSerializer,
     EnvironmentPreRequestOperationSerializer,
+    EnvironmentRequestControlSerializer,
     EnvironmentSerializer,
     EnvironmentVariableSerializer,
     PlatformSerializer,
@@ -67,7 +69,7 @@ class PlatformViewSet(OperatorAuditModelViewSet):
 
 
 class EnvironmentViewSet(OperatorAuditModelViewSet):
-    queryset = Environment.objects.select_related("project").prefetch_related("variable_items", "pre_request_operations__modules").all()
+    queryset = Environment.objects.select_related("project").prefetch_related("variable_items", "pre_request_operations__modules", "request_controls").all()
     serializer_class = EnvironmentSerializer
     permission_classes = [action_permission("environment.read", "environment.write", "environment.delete")]
     filterset_fields = ["project", "env_type", "is_default", "is_readonly"]
@@ -96,6 +98,28 @@ class EnvironmentPreRequestOperationViewSet(OperatorAuditModelViewSet):
     filterset_fields = ["environment", "is_enabled"]
     search_fields = ["name"]
     audit_module = "environment_pre_request"
+
+
+class EnvironmentRequestControlViewSet(OperatorAuditModelViewSet):
+    queryset = EnvironmentRequestControl.objects.select_related("environment", "environment__project").all()
+    serializer_class = EnvironmentRequestControlSerializer
+    permission_classes = [action_permission("environment.request_control.read", "environment.request_control.write", "environment.request_control.delete")]
+    filterset_fields = ["environment", "is_enabled"]
+    search_fields = ["name", "description"]
+    audit_module = "environment_request_control"
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        clear_environment_request_control_cache(serializer.instance.environment_id)
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        clear_environment_request_control_cache(serializer.instance.environment_id)
+
+    def perform_destroy(self, instance):
+        environment_id = instance.environment_id
+        super().perform_destroy(instance)
+        clear_environment_request_control_cache(environment_id)
 
 
 class DatabaseConnectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):

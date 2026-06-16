@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="automation-v2-shell">
     <aside class="automation-nav">
       <div class="automation-title">自动化测试</div>
@@ -18,154 +18,152 @@
           <p>{{ currentFeature.desc }}</p>
         </div>
         <div class="automation-actions">
+          <el-select v-if="activeFeature === 'single'" v-model="runEnvironment" placeholder="执行环境" clearable style="width: 160px">
+            <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.id" />
+          </el-select>
           <el-button @click="load">刷新</el-button>
           <el-button type="primary" @click="primaryAction">{{ currentFeature.action }}</el-button>
         </div>
       </header>
 
-      <template v-if="activeFeature === 'single'">
-        <div class="automation-stats">
-          <div class="auto-stat"><span>用例总数</span><strong>{{ cases.length }}</strong></div>
-          <div class="auto-stat"><span>启用用例</span><strong>{{ activeCaseCount }}</strong></div>
-          <div class="auto-stat"><span>覆盖接口</span><strong>{{ coveredApiCount }}</strong></div>
-          <div class="auto-stat"><span>草稿用例</span><strong>{{ draftCaseCount }}</strong></div>
-        </div>
-        <div class="automation-toolbar">
-          <el-input v-model="keyword" placeholder="搜索用例名称、接口路径" clearable style="width: 300px" />
-          <el-select v-model="statusFilter" clearable placeholder="状态" style="width: 140px">
-            <el-option label="草稿" value="draft" />
-            <el-option label="启用" value="active" />
-            <el-option label="停用" value="inactive" />
-          </el-select>
-          <el-select v-model="platformFilter" clearable placeholder="平台" style="width: 150px">
-            <el-option v-for="item in platforms" :key="item.code" :label="item.name" :value="item.code" />
-          </el-select>
-        </div>
-        <div class="auto-table-card">
-          <el-table :data="filteredCases" v-loading="loading" stripe height="100%">
-            <el-table-column prop="name" label="用例名称" min-width="220" />
-            <el-table-column label="关联接口" min-width="240"><template #default="{ row }"><span class="inline-code">{{ row.method }} {{ row.api_path }}</span></template></el-table-column>
-            <el-table-column label="平台" width="120"><template #default="{ row }">{{ platformName(row.platform) }}</template></el-table-column>
-            <el-table-column prop="priority" label="优先级" width="90" />
-            <el-table-column label="状态" width="100"><template #default="{ row }"><span class="badge" :class="caseStatusClass(row.status)">{{ caseStatusText(row.status) }}</span></template></el-table-column>
-            <el-table-column label="操作" width="190" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="goApi(row)">接口</el-button>
-                <el-button link type="primary" @click="runCase(row)">执行</el-button>
-                <el-button link class="danger-link" @click="deleteCase(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </template>
+      <SingleApiCaseWorkbench
+        v-if="activeFeature === 'single'"
+        ref="singleWorkbenchRef"
+        :environment-id="runEnvironment"
+        :environment-name="selectedEnvironmentName"
+      />
 
       <template v-else-if="activeFeature === 'scenario'">
-        <div class="scenario-workbench">
-          <aside class="scenario-list">
-            <div class="scenario-list-head">
-              <strong>场景列表</strong>
-              <el-button size="small" type="primary" @click="newScenario">新增</el-button>
-            </div>
-            <el-input v-model="scenarioKeyword" placeholder="搜索场景" clearable />
-            <button
-              v-for="scenario in filteredScenarios"
-              :key="scenario.id"
-              class="scenario-list-item"
-              :class="{ active: selectedScenario?.id === scenario.id }"
-              @click="selectScenario(scenario)"
-            >
-              <b>{{ scenario.name }}</b>
-              <span>{{ scenario.description || "暂无描述" }}</span>
-            </button>
-            <el-empty v-if="!filteredScenarios.length" description="暂无场景" />
-          </aside>
-
-          <section class="scenario-editor">
-            <div class="scenario-editor-head">
-              <div class="scenario-form">
-                <el-input v-model="scenarioForm.name" placeholder="场景名称，例如：订单创建到出库流程" />
-                <el-input v-model="scenarioForm.description" placeholder="场景说明" />
-              </div>
-              <div class="scenario-actions">
-                <el-select v-model="runEnvironment" placeholder="执行环境" clearable style="width: 160px">
-                  <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.id" />
-                </el-select>
-                <el-button @click="saveScenario" :loading="savingScenario">保存场景</el-button>
-                <el-button type="primary" @click="runScenario" :loading="runningScenario">执行场景</el-button>
-              </div>
-            </div>
-
-            <div class="scenario-add-step">
-              <el-select v-model="apiToAdd" filterable placeholder="选择接口加入流程" style="min-width: 360px">
-                <el-option v-for="api in apis" :key="api.id" :label="`${api.method} ${api.name} (${api.path})`" :value="api.id" />
+        <div class="scenario-stage">
+          <section class="scenario-canvas">
+            <nav class="scenario-tabs">
+              <button :class="{ active: scenarioTab === 'steps' }" @click="scenarioTab = 'steps'">测试步骤</button>
+              <button :class="{ active: scenarioTab === 'data' }" @click="scenarioTab = 'data'">测试数据</button>
+              <button :class="{ active: scenarioTab === 'report' }" @click="scenarioTab = 'report'">测试报告</button>
+              <el-select v-model="selectedScenarioId" filterable placeholder="选择场景" class="scenario-switch" @change="handleScenarioSwitch">
+                <el-option v-for="scenario in filteredScenarios" :key="scenario.id" :label="scenario.name" :value="scenario.id" />
               </el-select>
-              <el-button type="primary" @click="addStepFromApi">加入流程</el-button>
-              <el-button @click="exportScenario('excel')" :disabled="!scenarioResults.length">导出表格</el-button>
-              <el-button @click="exportScenario('text')" :disabled="!scenarioResults.length">导出文本</el-button>
-              <el-button @click="exportScenario('word')" :disabled="!scenarioResults.length">导出 Word</el-button>
-            </div>
+              <el-button @click="openScenarioDialog()">新增场景</el-button>
+            </nav>
 
-            <div class="scenario-step-table">
-              <div class="scenario-step-row scenario-step-head">
-                <span>#</span>
-                <span>接口步骤</span>
-                <span>提取变量</span>
-                <span>断言</span>
-                <span>操作</span>
-              </div>
-              <div v-for="(step, index) in scenarioSteps" :key="step.uid" class="scenario-step-row">
-                <span class="step-order">{{ index + 1 }}</span>
-                <div class="step-main">
-                  <el-input v-model="step.name" placeholder="步骤名称" />
-                  <span class="inline-code">{{ step.method }} {{ step.path }}</span>
-                  <div class="step-data-sources">
-                    <el-select v-model="step.pre_data_source_ids" multiple collapse-tags collapse-tags-tooltip clearable placeholder="前置数据源">
-                      <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
-                    </el-select>
-                    <el-select v-model="step.post_data_source_ids" multiple collapse-tags collapse-tags-tooltip clearable placeholder="后置数据源">
-                      <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
-                    </el-select>
-                  </div>
-                </div>
-                <div class="step-mini-form">
-                  <el-input v-model="step.extractName" placeholder="变量名，如 token" />
-                  <el-input v-model="step.extractPath" placeholder="JSONPath，如 $.data.token" />
-                </div>
-                <div class="step-assert-form">
-                  <el-input v-model="step.assertPath" placeholder="JSONPath，如 $.code" />
-                  <el-select v-model="step.assertOperator">
-                    <el-option label="等于" value="eq" />
-                    <el-option label="包含" value="contains" />
-                    <el-option label="存在" value="exists" />
+            <template v-if="scenarioTab === 'steps'">
+              <header class="scenario-hero">
+                <div class="scenario-title-line">
+                  <el-select v-model="scenarioPriority" class="scenario-priority">
+                    <el-option label="P0" value="P0" />
+                    <el-option label="P1" value="P1" />
+                    <el-option label="P2" value="P2" />
+                    <el-option label="P3" value="P3" />
                   </el-select>
-                  <el-input v-model="step.assertExpected" :disabled="step.assertOperator === 'exists'" placeholder="期望值" />
+                  <h2>{{ selectedScenario?.name || "请选择或新增场景" }}</h2>
                 </div>
-                <div class="step-actions">
-                  <el-button link type="primary" :disabled="index === 0" @click="moveStep(index, -1)">上移</el-button>
-                  <el-button link type="primary" :disabled="index === scenarioSteps.length - 1" @click="moveStep(index, 1)">下移</el-button>
-                  <el-button link class="danger-link" @click="removeStep(index)">删除</el-button>
-                </div>
-              </div>
-              <el-empty v-if="!scenarioSteps.length" description="请选择接口加入测试流程" />
-            </div>
+                <button class="scenario-desc-button" @click="openScenarioDialog(selectedScenario)">添加描述</button>
+                <p>{{ scenarioUpdatedText }}</p>
+              </header>
 
-            <div class="scenario-results">
-              <div class="scenario-results-head">
-                <strong>执行结果</strong>
-                <span v-if="scenarioResults.length">通过 {{ passedStepCount }} / {{ scenarioResults.length }}</span>
+              <div class="scenario-step-count">
+                <el-checkbox :model-value="Boolean(scenarioSteps.length)" />
+                <span>已选 {{ scenarioSteps.length }} 项</span>
               </div>
-              <el-table :data="scenarioResults" stripe height="100%">
-                <el-table-column prop="order" label="#" width="56" />
-                <el-table-column prop="name" label="步骤" min-width="180" />
-                <el-table-column label="状态" width="90"><template #default="{ row }"><span class="badge" :class="row.passed ? 'badge-success' : 'badge-danger'">{{ row.passed ? "PASS" : "FAIL" }}</span></template></el-table-column>
-                <el-table-column prop="statusCode" label="HTTP" width="90" />
-                <el-table-column prop="elapsed" label="耗时" width="100" />
-                <el-table-column prop="extractedText" label="提取数据" min-width="180" show-overflow-tooltip />
-                <el-table-column prop="assertText" label="断言" min-width="220" show-overflow-tooltip />
-                <el-table-column prop="error" label="错误" min-width="220" show-overflow-tooltip />
-              </el-table>
-            </div>
+
+              <div class="scenario-step-cards">
+                <article v-for="(step, index) in scenarioSteps" :key="step.uid" class="scenario-step-card">
+                  <div class="scenario-step-card-main" @click="openStepEditor(step, index)">
+                    <el-checkbox :model-value="step.is_active !== false" @change="step.is_active = !step.is_active" @click.stop />
+                    <span class="scenario-method" :class="step.method.toLowerCase()">{{ step.method }}</span>
+                    <strong>{{ step.name }}</strong>
+                    <small>{{ step.path }}</small>
+                  </div>
+                  <div class="scenario-step-card-actions">
+                    <button @click="openStepEditor(step, index)">编辑</button>
+                    <button :disabled="index === 0" @click="moveStep(index, -1)">上移</button>
+                    <button :disabled="index === scenarioSteps.length - 1" @click="moveStep(index, 1)">下移</button>
+                    <button class="danger-link" @click="removeStep(index)">删除</button>
+                  </div>
+                </article>
+              </div>
+
+              <div class="scenario-add-card">
+                <el-select v-model="apiToAdd" filterable placeholder="选择接口添加为步骤">
+                  <el-option v-for="api in apis" :key="api.id" :label="`${api.method} ${api.name} (${api.path})`" :value="api.id" />
+                </el-select>
+                <button @click="addStepFromApi">+ 添加步骤</button>
+              </div>
+            </template>
+
+            <template v-else-if="scenarioTab === 'data'">
+              <div class="scenario-panel-empty">
+                <h2>测试数据</h2>
+                <p>可在右侧选择本次运行使用的数据源，也可在步骤编辑中为每一步配置前置/后置数据源。</p>
+                <el-table :data="activeTestDataSources" height="360">
+                  <el-table-column prop="name" label="数据源" min-width="180" />
+                  <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
+                  <el-table-column prop="is_active" label="状态" width="90">
+                    <template #default="{ row }">{{ row.is_active ? "启用" : "停用" }}</template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="scenario-panel-empty">
+                <h2>测试报告</h2>
+                <p v-if="!scenarioResults.length">执行场景后会在这里展示最近一次运行结果。</p>
+                <el-table v-else :data="scenarioResults" height="420">
+                  <el-table-column prop="order" label="#" width="56" />
+                  <el-table-column prop="name" label="步骤" min-width="180" />
+                  <el-table-column label="状态" width="90"><template #default="{ row }"><span class="badge" :class="row.passed ? 'badge-success' : 'badge-danger'">{{ row.passed ? "PASS" : "FAIL" }}</span></template></el-table-column>
+                  <el-table-column prop="statusCode" label="HTTP" width="90" />
+                  <el-table-column prop="elapsed" label="耗时" width="100" />
+                  <el-table-column prop="extractedText" label="提取数据" min-width="180" show-overflow-tooltip />
+                  <el-table-column prop="assertText" label="断言" min-width="220" show-overflow-tooltip />
+                  <el-table-column prop="error" label="错误" min-width="220" show-overflow-tooltip />
+                </el-table>
+              </div>
+            </template>
           </section>
+
+          <aside class="scenario-runner">
+            <el-tabs v-model="scenarioRunMode">
+              <el-tab-pane label="功能测试" name="functional" />
+              <el-tab-pane label="性能测试" name="performance" />
+            </el-tabs>
+            <label>运行环境</label>
+            <el-select v-model="scenarioRunnerEnvironment" placeholder="请选择运行环境" :disabled="!selectedScenario">
+              <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.id" />
+            </el-select>
+            <label>测试数据</label>
+            <el-select v-model="runnerDataSource" clearable placeholder="不使用测试数据">
+              <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
+            </el-select>
+            <div class="scenario-runner-grid">
+              <div>
+                <label>循环次数</label>
+                <el-input-number v-model="runnerLoopCount" :min="1" :max="999" />
+              </div>
+              <div>
+                <label>线程数</label>
+                <el-input-number v-model="runnerThreadCount" :min="1" :max="100" />
+              </div>
+            </div>
+            <label>运行于</label>
+            <el-select v-model="runnerHost">
+              <el-option label="本机" value="local" />
+              <el-option label="远程执行机" value="remote" />
+            </el-select>
+            <div class="scenario-runner-line">
+              <span>通知</span>
+              <el-switch v-model="runnerNotify" />
+            </div>
+            <div class="scenario-runner-line">
+              <span>高级设置</span>
+              <el-checkbox v-model="runnerShare">共享</el-checkbox>
+            </div>
+            <div class="scenario-runner-actions">
+              <el-button type="primary" :loading="runningScenario" @click="runScenario">运行</el-button>
+              <el-button :loading="savingScenario" @click="saveScenarioRunner">保存</el-button>
+            </div>
+          </aside>
         </div>
       </template>
 
@@ -180,6 +178,126 @@
         </div>
       </template>
     </section>
+
+    <el-dialog v-model="scenarioDialog" :title="scenarioForm.id ? '编辑场景用例' : '新增场景用例'" width="560px" destroy-on-close>
+      <el-form label-width="86px">
+        <el-form-item label="名称" required>
+          <el-input v-model="scenarioForm.name" maxlength="20" show-word-limit placeholder="请输入场景名称" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="scenarioForm.description" type="textarea" :rows="4" maxlength="200" show-word-limit placeholder="请输入场景说明" />
+        </el-form-item>
+        <el-form-item label="运行环境" required>
+          <el-select v-model="scenarioForm.environment" filterable placeholder="请选择运行环境" style="width: 100%">
+            <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="scenarioDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingScenario" @click="saveScenarioMeta">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-drawer v-model="stepDrawer" size="72%" :with-header="false" destroy-on-close>
+      <div class="scenario-step-drawer">
+        <header class="scenario-step-drawer-head">
+          <div>
+            <b>编辑接口步骤</b>
+            <span>{{ stepEditForm.method }} {{ stepEditForm.path || "-" }}</span>
+          </div>
+          <div>
+            <el-button @click="stepDrawer = false">取消</el-button>
+            <el-button type="primary" @click="applyStepEdit">应用</el-button>
+          </div>
+        </header>
+
+        <el-form label-width="86px" class="scenario-step-form">
+          <el-form-item label="步骤名称" required><el-input v-model="stepEditForm.name" /></el-form-item>
+          <el-form-item label="请求信息">
+            <div class="step-request-line">
+              <el-select v-model="stepEditForm.method" style="width: 120px">
+                <el-option v-for="method in httpMethods" :key="method" :label="method" :value="method" />
+              </el-select>
+              <el-input v-model="stepEditForm.path" placeholder="/api/path" />
+            </div>
+          </el-form-item>
+          <el-form-item label="所属平台">
+            <el-select v-model="stepEditForm.platform" filterable>
+              <el-option v-for="platform in platforms" :key="platform.code" :label="platform.name" :value="platform.code" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+
+        <el-tabs v-model="stepEditTab" class="scenario-step-tabs">
+          <el-tab-pane label="Params" name="params">
+            <div class="kv-editor">
+              <div class="kv-row kv-head"><span>启用</span><span>Key</span><span>Value</span><span>说明</span><span></span></div>
+              <div v-for="(row, index) in stepEditForm.query_params" :key="index" class="kv-row">
+                <el-checkbox v-model="row.enabled" />
+                <el-input v-model="row.key" placeholder="key" />
+                <el-input v-model="row.value" placeholder="{{变量名}} 或固定值" />
+                <el-input v-model="row.description" placeholder="说明" />
+                <el-button link class="danger-link" @click="removeStepRow('query_params', index)">删除</el-button>
+              </div>
+              <el-button @click="addStepRow('query_params')">新增 Params</el-button>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="Headers" name="headers">
+            <div class="kv-editor">
+              <div class="kv-row kv-head"><span>启用</span><span>Key</span><span>Value</span><span>说明</span><span></span></div>
+              <div v-for="(row, index) in stepEditForm.headers" :key="index" class="kv-row">
+                <el-checkbox v-model="row.enabled" />
+                <el-input v-model="row.key" placeholder="Header Key" />
+                <el-input v-model="row.value" placeholder="{{token}} 或固定值" />
+                <el-input v-model="row.description" placeholder="说明" />
+                <el-button link class="danger-link" @click="removeStepRow('headers', index)">删除</el-button>
+              </div>
+              <el-button @click="addStepRow('headers')">新增 Header</el-button>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="Body" name="body">
+            <el-select v-model="stepEditForm.body_type" style="width: 160px; margin-bottom: 10px">
+              <el-option label="none" value="none" />
+              <el-option label="json" value="json" />
+              <el-option label="form" value="form" />
+              <el-option label="raw" value="raw" />
+            </el-select>
+            <el-input v-model="stepBodyText" type="textarea" :rows="12" placeholder='{"id":"{{orderId}}"}' />
+          </el-tab-pane>
+          <el-tab-pane label="提取变量" name="extractors">
+            <div class="kv-editor extractor-editor">
+              <div class="kv-row extractor-row kv-head"><span>变量名</span><span>JSONPath</span><span></span></div>
+              <div v-for="(row, index) in stepEditForm.extractors" :key="index" class="kv-row extractor-row">
+                <el-input v-model="row.name" placeholder="orderId" />
+                <el-input v-model="row.path" placeholder="$.data.id" />
+                <el-button link class="danger-link" @click="stepEditForm.extractors.splice(index, 1)">删除</el-button>
+              </div>
+              <el-button @click="stepEditForm.extractors.push({ name: '', path: '' })">新增提取变量</el-button>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="断言" name="assertions">
+            <div class="kv-editor assertion-editor">
+              <div class="kv-row assertion-row kv-head"><span>JSONPath</span><span>关系</span><span>期望值</span><span></span></div>
+              <div v-for="(row, index) in stepEditForm.assertions" :key="index" class="kv-row assertion-row">
+                <el-input v-model="row.path" placeholder="$.code" />
+                <el-select v-model="row.operator">
+                  <el-option label="等于" value="eq" />
+                  <el-option label="包含" value="contains" />
+                  <el-option label="存在" value="exists" />
+                </el-select>
+                <el-input v-model="row.expected" :disabled="row.operator === 'exists'" placeholder="期望值" />
+                <el-button link class="danger-link" @click="stepEditForm.assertions.splice(index, 1)">删除</el-button>
+              </div>
+              <el-button @click="stepEditForm.assertions.push({ type: 'json_path', path: '', operator: 'eq', expected: '' })">新增断言</el-button>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="Auth" name="auth">
+            <el-input v-model="stepAuthText" type="textarea" :rows="10" placeholder='{"type":"bearer","token":"{{token}}"}' />
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -188,6 +306,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
+import SingleApiCaseWorkbench from "@/components/SingleApiCaseWorkbench.vue";
 import { platformApi, unwrapList } from "@/api/platform";
 import { extractJsonPath, formatExtractValue } from "@/utils/jsonExtract";
 
@@ -214,6 +333,9 @@ interface ApiDefinition {
   auth_config?: Record<string, unknown>;
   assertions?: unknown[];
 }
+interface RowItem { enabled: boolean; key: string; value: string; description?: string }
+interface ExtractorItem { name: string; path: string }
+interface AssertionItem { type?: string; path: string; key?: string; operator: string; expected?: string }
 interface ApiTestCase {
   id: number;
   api: number;
@@ -225,7 +347,7 @@ interface ApiTestCase {
   priority: string;
 }
 interface ApiSuite { id: number; name: string; description?: string }
-interface ApiScenario { id: number; suite: number; name: string; description?: string; priority?: string; is_active?: boolean }
+interface ApiScenario { id: number; suite: number; environment?: number; name: string; description?: string; priority?: string; is_active?: boolean }
 interface ApiStep {
   id?: number;
   scenario?: number;
@@ -234,8 +356,8 @@ interface ApiStep {
   platform: string;
   method: string;
   path: string;
-  headers?: unknown[];
-  query_params?: unknown[];
+  headers?: RowItem[];
+  query_params?: RowItem[];
   body_type?: string;
   body?: unknown;
   auth_config?: Record<string, unknown>;
@@ -264,8 +386,20 @@ interface ScenarioResult {
   assertText: string;
   error: string;
 }
+interface StepEditForm {
+  name: string;
+  platform: string;
+  method: string;
+  path: string;
+  headers: RowItem[];
+  query_params: RowItem[];
+  body_type: string;
+  extractors: ExtractorItem[];
+  assertions: AssertionItem[];
+}
 
 const router = useRouter();
+const singleWorkbenchRef = ref<InstanceType<typeof SingleApiCaseWorkbench>>();
 const features: Feature[] = [
   { key: "single", code: "API", label: "单接口用例", desc: "围绕单个接口沉淀功能测试场景", action: "新增用例", longDesc: "", points: [] },
   { key: "scenario", code: "FLOW", label: "场景测试", desc: "自选接口并串联为业务测试流程", action: "新增场景", longDesc: "场景测试用于编排多个接口步骤，支持变量传递、数据提取、断言和结果导出。", points: ["选择接口", "步骤编排", "变量提取", "流程断言"] },
@@ -288,14 +422,48 @@ const testDataSources = ref<any[]>([]);
 const suites = ref<ApiSuite[]>([]);
 const scenarios = ref<ApiScenario[]>([]);
 const selectedScenario = ref<ApiScenario>();
+const selectedScenarioId = ref<number>();
 const scenarioKeyword = ref("");
+const scenarioTab = ref<"steps" | "data" | "report">("steps");
 const scenarioSteps = ref<ScenarioStep[]>([]);
 const scenarioResults = ref<ScenarioResult[]>([]);
 const apiToAdd = ref<number>();
 const runEnvironment = ref<number>();
 const savingScenario = ref(false);
 const runningScenario = ref(false);
-const scenarioForm = reactive({ name: "", description: "" });
+const scenarioDialog = ref(false);
+const scenarioForm = reactive({ id: undefined as number | undefined, name: "", description: "", environment: undefined as number | undefined });
+const scenarioRunMode = ref("functional");
+const scenarioRunnerEnvironment = ref<number>();
+const runnerDataSource = ref<number>();
+const runnerLoopCount = ref(1);
+const runnerThreadCount = ref(1);
+const runnerHost = ref("local");
+const runnerNotify = ref(false);
+const runnerShare = ref(false);
+const scenarioPriority = computed({
+  get: () => selectedScenario.value?.priority || "P2",
+  set: (priority: string) => {
+    if (selectedScenario.value) selectedScenario.value.priority = priority;
+  },
+});
+const httpMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const stepDrawer = ref(false);
+const stepEditTab = ref("params");
+const editingStepIndex = ref<number>();
+const stepBodyText = ref("{}");
+const stepAuthText = ref("{}");
+const stepEditForm = reactive<StepEditForm>({
+  name: "",
+  platform: "",
+  method: "GET",
+  path: "",
+  headers: [],
+  query_params: [],
+  body_type: "none",
+  extractors: [],
+  assertions: [],
+});
 
 const currentFeature = computed(() => features.find((item) => item.key === activeFeature.value) || features[0]);
 const platforms = computed(() => platformRows.value.map((item) => ({ ...item, code: item.code?.toUpperCase?.() || item.code })));
@@ -315,7 +483,15 @@ const filteredCases = computed(() =>
 const filteredScenarios = computed(() => scenarios.value.filter((item) => !scenarioKeyword.value || item.name.toLowerCase().includes(scenarioKeyword.value.toLowerCase())));
 const passedStepCount = computed(() => scenarioResults.value.filter((item) => item.passed).length);
 const activeTestDataSources = computed(() => testDataSources.value.filter((item) => item.is_active));
-
+const selectedEnvironmentName = computed(() => environments.value.find((item) => item.id === runEnvironment.value)?.name || "-");
+const scenarioEnvironmentName = computed(() => {
+  const environmentId = selectedScenario.value?.environment;
+  return environments.value.find((item) => item.id === environmentId)?.name || "未配置";
+});
+const scenarioUpdatedText = computed(() => {
+  if (!selectedScenario.value) return "请选择场景后维护测试步骤";
+  return `${selectedScenario.value.description || "暂无描述"} · 共 ${scenarioSteps.value.length} 个步骤`;
+});
 const platformName = (code: string) => platforms.value.find((item) => item.code === code)?.name || code;
 const caseStatusText = (status: string) => ({ draft: "草稿", active: "启用", inactive: "停用" }[status] || status);
 const caseStatusClass = (status: string) => (status === "active" ? "badge-success" : status === "inactive" ? "badge-danger" : "badge-warning");
@@ -348,11 +524,11 @@ const load = async () => {
 
 const primaryAction = () => {
   if (activeFeature.value === "single") {
-    ElMessage.info("请进入接口管理，选中接口后在测试用例页新增用例。");
+    singleWorkbenchRef.value?.openCreateDialog();
     return;
   }
   if (activeFeature.value === "scenario") {
-    newScenario();
+    openScenarioDialog();
     return;
   }
   if (activeFeature.value === "schedule") {
@@ -370,38 +546,116 @@ const defaultSuite = async () => {
   return data as ApiSuite;
 };
 
-const newScenario = () => {
-  selectedScenario.value = undefined;
-  Object.assign(scenarioForm, { name: "", description: "" });
-  scenarioSteps.value = [];
-  scenarioResults.value = [];
+const cloneJson = <T>(value: T, fallback: T): T => {
+  if (value === undefined || value === null) return fallback;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return fallback;
+  }
+};
+
+const parseJsonText = <T>(text: string, fallback: T): T => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    ElMessage.warning("JSON 格式不正确");
+    throw new Error("invalid json");
+  }
+};
+
+const normalizeRows = (rows?: RowItem[]) =>
+  (Array.isArray(rows) ? rows : [])
+    .filter((row) => row.key?.trim())
+    .map((row) => ({
+      enabled: row.enabled !== false,
+      key: row.key.trim(),
+      value: row.value ?? "",
+      description: row.description || "",
+    }));
+
+const normalizeExtractors = (rows?: ExtractorItem[]) =>
+  (Array.isArray(rows) ? rows : [])
+    .filter((row) => row.name?.trim() && row.path?.trim())
+    .map((row) => ({ name: row.name.trim(), path: row.path.trim() }));
+
+const normalizeAssertions = (rows?: AssertionItem[]) =>
+  (Array.isArray(rows) ? rows : [])
+    .filter((row) => row.path?.trim())
+    .map((row) => ({
+      type: "json_path",
+      path: row.path.trim(),
+      operator: row.operator || "eq",
+      expected: row.operator === "exists" ? "" : row.expected ?? "",
+    }));
+
+const stepSummaryExtractor = (step: ApiStep) => normalizeExtractors(step.extractors as ExtractorItem[])[0] || {};
+const stepSummaryAssertion = (step: ApiStep) => normalizeAssertions(step.assertions as AssertionItem[])[0] || {};
+
+const resetScenarioForm = () => {
+  Object.assign(scenarioForm, {
+    id: undefined,
+    name: "",
+    description: "",
+    environment: environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id,
+  });
+};
+
+const openScenarioDialog = (scenario?: ApiScenario) => {
+  if (scenario) {
+    Object.assign(scenarioForm, {
+      id: scenario.id,
+      name: scenario.name,
+      description: scenario.description || "",
+      environment: scenario.environment || environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id,
+    });
+  } else {
+    resetScenarioForm();
+  }
+  scenarioDialog.value = true;
 };
 
 const toScenarioStep = (step: ApiStep): ScenarioStep => {
-  const extractor = step.extractors?.[0] || {};
-  const assertion = step.assertions?.[0] || {};
+  const extractor = stepSummaryExtractor(step);
+  const assertion = stepSummaryAssertion(step);
   return {
     ...step,
     uid: Date.now() + Math.floor(Math.random() * 100000),
     extractName: extractor.name || "",
     extractPath: extractor.path || "",
-    assertPath: assertion.path || assertion.key || "",
+    assertPath: assertion.path || "",
     assertOperator: assertion.operator || "eq",
     assertExpected: assertion.expected === undefined || assertion.expected === null ? "" : String(assertion.expected),
-    pre_data_source_ids: Array.isArray(step.pre_data_source_ids) ? [...step.pre_data_source_ids] : [],
-    post_data_source_ids: Array.isArray(step.post_data_source_ids) ? [...step.post_data_source_ids] : [],
+    headers: cloneJson(step.headers as RowItem[], []),
+    query_params: cloneJson(step.query_params as RowItem[], []),
+    body: cloneJson(step.body, {}),
+    auth_config: cloneJson(step.auth_config || {}, {}),
+    assertions: cloneJson(step.assertions || [], []),
+    extractors: cloneJson(step.extractors || [], []),
+    pre_data_source_ids: cloneJson(step.pre_data_source_ids || [], []),
+    post_data_source_ids: cloneJson(step.post_data_source_ids || [], []),
   };
 };
 
 const selectScenario = async (scenario: ApiScenario) => {
   selectedScenario.value = scenario;
-  Object.assign(scenarioForm, { name: scenario.name, description: scenario.description || "" });
+  selectedScenarioId.value = scenario.id;
+  scenarioRunnerEnvironment.value = scenario.environment || environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id;
   scenarioResults.value = [];
-  const { data } = await platformApi.apiSteps({ scenario: scenario.id });
+  const { data } = await platformApi.apiSteps({ scenario: scenario.id, ordering: "sort_order,id" });
   scenarioSteps.value = unwrapList<ApiStep>(data).map(toScenarioStep);
 };
 
+const handleScenarioSwitch = async (id: number) => {
+  const scenario = scenarios.value.find((item) => item.id === id);
+  if (scenario) await selectScenario(scenario);
+};
+
 const addStepFromApi = () => {
+  if (!selectedScenario.value) {
+    ElMessage.warning("请先新增或选择场景");
+    return;
+  }
   const api = apis.value.find((item) => item.id === apiToAdd.value);
   if (!api) {
     ElMessage.warning("请先选择接口");
@@ -413,8 +667,8 @@ const addStepFromApi = () => {
     platform: api.platform,
     method: api.method,
     path: api.path,
-    headers: api.headers || [],
-    query_params: api.query_params || [],
+    headers: cloneJson(api.headers as RowItem[], []),
+    query_params: cloneJson(api.query_params as RowItem[], []),
     body_type: api.body_type || "none",
     body: api.body || {},
     auth_config: api.auth_config || {},
@@ -441,6 +695,65 @@ const removeStep = (index: number) => {
   scenarioSteps.value.splice(index, 1);
 };
 
+const openStepEditor = (step: ScenarioStep, index: number) => {
+  editingStepIndex.value = index;
+  Object.assign(stepEditForm, {
+    name: step.name,
+    platform: step.platform,
+    method: step.method,
+    path: step.path,
+    headers: normalizeRows(cloneJson(step.headers as RowItem[], [])),
+    query_params: normalizeRows(cloneJson(step.query_params as RowItem[], [])),
+    body_type: step.body_type || "none",
+    extractors: normalizeExtractors(cloneJson(step.extractors as ExtractorItem[], [])),
+    assertions: normalizeAssertions(cloneJson(step.assertions as AssertionItem[], [])),
+  });
+  stepBodyText.value = JSON.stringify(step.body || {}, null, 2);
+  stepAuthText.value = JSON.stringify(step.auth_config || {}, null, 2);
+  stepEditTab.value = "params";
+  stepDrawer.value = true;
+};
+
+const addStepRow = (field: "headers" | "query_params") => {
+  stepEditForm[field].push({ enabled: true, key: "", value: "", description: "" });
+};
+
+const removeStepRow = (field: "headers" | "query_params", index: number) => {
+  stepEditForm[field].splice(index, 1);
+};
+
+const applyStepEdit = () => {
+  if (editingStepIndex.value === undefined) return;
+  if (!stepEditForm.name.trim() || !stepEditForm.path.trim()) {
+    ElMessage.warning("步骤名称和请求路径不能为空");
+    return;
+  }
+  let body: unknown;
+  let auth_config: Record<string, unknown>;
+  try {
+    body = parseJsonText(stepBodyText.value || "{}", {});
+    auth_config = parseJsonText(stepAuthText.value || "{}", {});
+  } catch {
+    return;
+  }
+  const current = scenarioSteps.value[editingStepIndex.value];
+  scenarioSteps.value.splice(editingStepIndex.value, 1, toScenarioStep({
+    ...current,
+    name: stepEditForm.name.trim(),
+    platform: stepEditForm.platform,
+    method: stepEditForm.method,
+    path: stepEditForm.path.trim(),
+    headers: normalizeRows(stepEditForm.headers),
+    query_params: normalizeRows(stepEditForm.query_params),
+    body_type: stepEditForm.body_type,
+    body,
+    auth_config,
+    extractors: normalizeExtractors(stepEditForm.extractors),
+    assertions: normalizeAssertions(stepEditForm.assertions),
+  }));
+  stepDrawer.value = false;
+};
+
 const stepPayload = (step: ScenarioStep, scenarioId: number, index: number) => ({
   scenario: scenarioId,
   api: step.api,
@@ -448,22 +761,34 @@ const stepPayload = (step: ScenarioStep, scenarioId: number, index: number) => (
   platform: step.platform,
   method: step.method,
   path: step.path,
-  headers: step.headers || [],
-  query_params: step.query_params || [],
+  headers: normalizeRows(step.headers as RowItem[]),
+  query_params: normalizeRows(step.query_params as RowItem[]),
   body_type: step.body_type || "none",
   body: step.body || {},
   auth_config: step.auth_config || {},
   pre_data_source_ids: step.pre_data_source_ids || [],
   post_data_source_ids: step.post_data_source_ids || [],
-  extractors: step.extractName && step.extractPath ? [{ name: step.extractName, path: step.extractPath }] : [],
-  assertions: step.assertPath ? [{ type: "json_path", path: step.assertPath, operator: step.assertOperator, expected: step.assertOperator === "exists" ? "" : step.assertExpected }] : [],
+  extractors: normalizeExtractors(step.extractors as ExtractorItem[]),
+  assertions: normalizeAssertions(step.assertions as AssertionItem[]),
   sort_order: index,
   is_active: true,
 });
 
-const saveScenario = async () => {
+const saveScenarioMeta = async () => {
   if (!scenarioForm.name.trim()) {
     ElMessage.warning("请填写场景名称");
+    return;
+  }
+  if (scenarioForm.name.trim().length > 20) {
+    ElMessage.warning("场景名称不能超过20个字");
+    return;
+  }
+  if ((scenarioForm.description || "").length > 200) {
+    ElMessage.warning("场景说明不能超过200个字");
+    return;
+  }
+  if (!scenarioForm.environment) {
+    ElMessage.warning("请选择运行环境");
     return;
   }
   savingScenario.value = true;
@@ -471,26 +796,96 @@ const saveScenario = async () => {
     const suite = await defaultSuite();
     const scenarioPayload = {
       suite: suite.id,
+      environment: scenarioForm.environment,
       name: scenarioForm.name.trim(),
       description: scenarioForm.description,
       priority: "P1",
       is_active: true,
     };
-    const { data: scenario } = selectedScenario.value
-      ? await platformApi.updateApiScenario(selectedScenario.value.id, scenarioPayload)
+    const { data: scenario } = scenarioForm.id
+      ? await platformApi.updateApiScenario(scenarioForm.id, scenarioPayload)
       : await platformApi.createApiScenario(scenarioPayload);
-    if (selectedScenario.value) {
-      const { data: oldStepsResp } = await platformApi.apiSteps({ scenario: scenario.id });
-      await Promise.all(unwrapList<ApiStep>(oldStepsResp).map((step) => step.id ? platformApi.deleteApiStep(step.id) : Promise.resolve()));
-    }
-    await Promise.all(scenarioSteps.value.map((step, index) => platformApi.createApiStep(stepPayload(step, scenario.id, index))));
     ElMessage.success("场景已保存");
+    scenarioDialog.value = false;
     selectedScenario.value = scenario;
+    selectedScenarioId.value = scenario.id;
+    scenarioRunnerEnvironment.value = scenario.environment;
     await load();
     await selectScenario(scenario);
   } finally {
     savingScenario.value = false;
   }
+};
+
+const saveScenarioSteps = async () => {
+  if (!selectedScenario.value) {
+    ElMessage.warning("请先新增或选择场景");
+    return;
+  }
+  savingScenario.value = true;
+  try {
+    const scenario = selectedScenario.value;
+    const savedStepIds = scenarioSteps.value.map((step) => step.id).filter(Boolean) as number[];
+    const { data: oldStepsResp } = await platformApi.apiSteps({ scenario: scenario.id, ordering: "sort_order,id" });
+    await Promise.all(
+      unwrapList<ApiStep>(oldStepsResp)
+        .filter((step) => step.id && !savedStepIds.includes(step.id))
+        .map((step) => platformApi.deleteApiStep(step.id as number)),
+    );
+    await Promise.all(
+      scenarioSteps.value.map((step, index) =>
+        step.id
+          ? platformApi.updateApiStep(step.id, stepPayload(step, scenario.id, index))
+          : platformApi.createApiStep(stepPayload(step, scenario.id, index)),
+      ),
+    );
+    ElMessage.success("步骤已保存");
+    await selectScenario(scenario);
+  } finally {
+    savingScenario.value = false;
+  }
+};
+
+const saveScenarioRunner = async () => {
+  if (!selectedScenario.value) {
+    ElMessage.warning("请先新增或选择场景");
+    return;
+  }
+  if (!scenarioRunnerEnvironment.value) {
+    ElMessage.warning("请选择运行环境");
+    return;
+  }
+  savingScenario.value = true;
+  try {
+    const { data } = await platformApi.updateApiScenario(selectedScenario.value.id, {
+      suite: selectedScenario.value.suite,
+      name: selectedScenario.value.name,
+      description: selectedScenario.value.description || "",
+      priority: scenarioPriority.value,
+      environment: scenarioRunnerEnvironment.value,
+      is_active: selectedScenario.value.is_active !== false,
+    });
+    selectedScenario.value = data;
+    const index = scenarios.value.findIndex((item) => item.id === data.id);
+    if (index >= 0) scenarios.value.splice(index, 1, data);
+    ElMessage.success("运行配置已保存");
+  } finally {
+    savingScenario.value = false;
+  }
+};
+
+const deleteScenario = async () => {
+  if (!selectedScenario.value) return;
+  await ElMessageBox.confirm(`确认删除场景「${selectedScenario.value.name}」？`, "删除确认", { type: "warning" });
+  await platformApi.deleteApiScenario(selectedScenario.value.id);
+  ElMessage.success("场景已删除");
+  selectedScenario.value = undefined;
+  selectedScenarioId.value = undefined;
+  scenarioRunnerEnvironment.value = undefined;
+  resetScenarioForm();
+  scenarioSteps.value = [];
+  scenarioResults.value = [];
+  await load();
 };
 
 const compareValue = (actual: unknown, expected: string, operator: string) => {
@@ -501,6 +896,16 @@ const compareValue = (actual: unknown, expected: string, operator: string) => {
 };
 
 const runScenario = async () => {
+  if (!selectedScenario.value) {
+    ElMessage.warning("请先新增或选择场景");
+    return;
+  }
+  const runEnvironmentId = scenarioRunnerEnvironment.value || selectedScenario.value.environment;
+  if (!runEnvironmentId) {
+    ElMessage.warning("请先为当前场景配置运行环境");
+    openScenarioDialog(selectedScenario.value);
+    return;
+  }
   if (!scenarioSteps.value.length) {
     ElMessage.warning("请先添加接口步骤");
     return;
@@ -510,39 +915,64 @@ const runScenario = async () => {
   const variables: Record<string, unknown> = {};
   try {
     for (const [index, step] of scenarioSteps.value.entries()) {
-      const { data } = await platformApi.debugApi({
-        method: step.method,
-        path: step.path,
-        platform: step.platform,
-        environment: runEnvironment.value,
-        headers: step.headers || [],
-        query_params: step.query_params || [],
-        body: step.body || {},
-        auth_config: step.auth_config || {},
-        pre_test_data_sources: step.pre_data_source_ids || [],
-        post_test_data_sources: step.post_data_source_ids || [],
-        extractors: step.extractName && step.extractPath ? [{ name: step.extractName, path: step.extractPath }] : [],
-        assertions: [],
-        variables,
-      });
+      let data: any;
+      try {
+        const resp = await platformApi.debugApi({
+          method: step.method,
+          path: step.path,
+          platform: step.platform,
+          environment: runEnvironmentId,
+          headers: step.headers || [],
+          query_params: step.query_params || [],
+          body: step.body || {},
+          auth_config: step.auth_config || {},
+          pre_test_data_sources: step.pre_data_source_ids || [],
+          post_test_data_sources: step.post_data_source_ids || [],
+          extractors: normalizeExtractors(step.extractors as ExtractorItem[]),
+          assertions: normalizeAssertions(step.assertions as AssertionItem[]),
+          variables,
+        });
+        data = resp.data;
+      } catch (error: any) {
+        scenarioResults.value.push({
+          order: index + 1,
+          name: step.name,
+          passed: false,
+          statusCode: "-",
+          elapsed: "-",
+          extractedText: "",
+          assertText: "未执行",
+          error: error?.message || "步骤执行失败",
+        });
+        break;
+      }
       const body = data?.response?.body;
       Object.assign(variables, data?.variables || {});
-      let extractedText = "";
-      if (step.extractName && step.extractPath) {
-        const extracted = extractJsonPath(body, step.extractPath);
+      const extractors = normalizeExtractors(step.extractors as ExtractorItem[]);
+      const extractedMessages: string[] = [];
+      for (const extractor of extractors) {
+        const extracted = extractJsonPath(body, extractor.path);
         if (extracted.ok) {
-          variables[step.extractName] = extracted.value;
-          extractedText = `${step.extractName}=${formatExtractValue(extracted.value)}`;
+          variables[extractor.name] = extracted.value;
+          extractedMessages.push(`${extractor.name}=${formatExtractValue(extracted.value)}`);
         } else {
-          extractedText = `${step.extractName}: ${extracted.message}`;
+          extractedMessages.push(`${extractor.name}: ${extracted.message}`);
         }
       }
+      const extractedText = extractedMessages.join("；");
       let assertPassed = true;
       let assertText = "未配置断言";
-      if (step.assertPath) {
-        const actual = extractJsonPath(body, step.assertPath);
-        assertPassed = actual.ok && compareValue(actual.value, step.assertExpected, step.assertOperator);
-        assertText = `${step.assertPath} ${step.assertOperator} ${step.assertExpected || ""}，实际 ${actual.ok ? formatExtractValue(actual.value) : actual.message}`;
+      const assertions = normalizeAssertions(step.assertions as AssertionItem[]);
+      if (assertions.length) {
+        const assertMessages: string[] = [];
+        assertPassed = true;
+        for (const assertion of assertions) {
+          const actual = extractJsonPath(body, assertion.path);
+          const currentPassed = actual.ok && compareValue(actual.value, assertion.expected || "", assertion.operator);
+          assertPassed = assertPassed && currentPassed;
+          assertMessages.push(`${assertion.path} ${assertion.operator} ${assertion.expected || ""}，实际 ${actual.ok ? formatExtractValue(actual.value) : actual.message}`);
+        }
+        assertText = assertMessages.join("；");
       }
       const httpOk = Boolean(data?.ok) && Number(data?.response?.status_code || 0) < 400;
       scenarioResults.value.push({
@@ -557,6 +987,7 @@ const runScenario = async () => {
       });
       if (!httpOk || !assertPassed) break;
     }
+    scenarioTab.value = "report";
   } finally {
     runningScenario.value = false;
   }
@@ -577,7 +1008,7 @@ const downloadFile = (filename: string, content: string, type: string) => {
 const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const exportScenario = (type: "excel" | "text" | "word") => {
   if (!scenarioResults.value.length) return;
-  const name = scenarioForm.name.trim() || "scenario";
+  const name = selectedScenario.value?.name || "scenario";
   if (type === "text") {
     const text = scenarioResults.value.map((item) => `${item.order}. ${item.name} ${item.passed ? "PASS" : "FAIL"} HTTP=${item.statusCode} ${item.elapsed} ${item.extractedText} ${item.assertText} ${item.error}`).join("\n");
     downloadFile(`${name}-result.txt`, text, "text/plain;charset=utf-8");
@@ -605,3 +1036,4 @@ watch(activeFeature, () => {
 
 onMounted(load);
 </script>
+

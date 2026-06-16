@@ -8,6 +8,7 @@ from apps.projects.models import (
     DatabaseConnection,
     Environment,
     EnvironmentPreRequestOperation,
+    EnvironmentRequestControl,
     EnvironmentVariable,
     Platform,
     Project,
@@ -128,9 +129,27 @@ class EnvironmentPreRequestOperationSerializer(OperatorFieldsMixin, serializers.
         return attrs
 
 
+class EnvironmentRequestControlSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
+    class Meta:
+        model = EnvironmentRequestControl
+        fields = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name"]
+
+    def validate_methods(self, value):
+        allowed = {choice[0] for choice in EnvironmentRequestControl.HttpMethod.choices}
+        methods = sorted({str(item).upper().strip() for item in value or [] if str(item).strip()})
+        invalid = [item for item in methods if item not in allowed]
+        if invalid:
+            raise serializers.ValidationError(f"不支持的请求方法：{', '.join(invalid)}")
+        if not methods:
+            raise serializers.ValidationError("请至少选择一个请求方法")
+        return methods
+
+
 class EnvironmentSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
     variable_items = EnvironmentVariableSerializer(many=True, read_only=True)
     pre_request_operations = EnvironmentPreRequestOperationSerializer(many=True, read_only=True)
+    request_controls = EnvironmentRequestControlSerializer(many=True, read_only=True)
 
     class Meta:
         model = Environment

@@ -253,6 +253,7 @@ const loadCases = async () => {
   if (suiteFilter.value) params.suite = suiteFilter.value;
   const { data } = await platformApi.uiCases(params);
   cases.value = unwrapList<UiCase>(data);
+  await loadElements();
 };
 
 const loadElements = async () => {

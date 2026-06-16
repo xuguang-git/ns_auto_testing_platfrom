@@ -1,18 +1,22 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.http import FileResponse, Http404, JsonResponse
+from django.urls import include, path, re_path
+from django.views.static import serve
 from rest_framework.routers import DefaultRouter
 
 from apps.accounts.views import (
     AuditLogViewSet,
     ChangePasswordView,
     LoginAttemptViewSet,
+    LoginCryptoView,
     LoginView,
     LogoutView,
     MeView,
     PermissionViewSet,
     ProfileView,
+    RefreshTokenView,
     RoleViewSet,
     UserSessionViewSet,
     UserViewSet,
@@ -32,6 +36,7 @@ from apps.projects.views import (
     DataFactoryCapabilityViewSet,
     DatabaseConnectionViewSet,
     EnvironmentPreRequestOperationViewSet,
+    EnvironmentRequestControlViewSet,
     EnvironmentVariableViewSet,
     EnvironmentViewSet,
     PlatformViewSet,
@@ -55,6 +60,7 @@ router.register("platforms", PlatformViewSet)
 router.register("environments", EnvironmentViewSet)
 router.register("environment-variables", EnvironmentVariableViewSet)
 router.register("environment-pre-request-operations", EnvironmentPreRequestOperationViewSet)
+router.register("environment-request-controls", EnvironmentRequestControlViewSet)
 router.register("database-connections", DatabaseConnectionViewSet)
 router.register("data-factory-capabilities", DataFactoryCapabilityViewSet)
 router.register("test-data-sources", TestDataSourceViewSet)
@@ -79,14 +85,32 @@ router.register("performance/scripts", JMeterScriptViewSet)
 router.register("performance/tasks", PerformanceTaskViewSet)
 router.register("performance/runs", PerformanceRunViewSet)
 
+
+def frontend_index(_request):
+    index_path = settings.FRONTEND_DIST_DIR / "index.html"
+    if not index_path.exists():
+        raise Http404("Frontend build not found. Run npm run build in frontend first.")
+    return FileResponse(index_path.open("rb"), content_type="text/html")
+
+
+def api_not_found(_request, path=""):
+    return JsonResponse({"code": 40400, "message": "接口不存在。", "data": None, "errors": {}}, status=404)
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/v1/auth/login-crypto/", LoginCryptoView.as_view()),
     path("api/v1/auth/login/", LoginView.as_view()),
+    path("api/v1/auth/refresh/", RefreshTokenView.as_view()),
     path("api/v1/auth/logout/", LogoutView.as_view()),
     path("api/v1/auth/me/", MeView.as_view()),
     path("api/v1/profile/", ProfileView.as_view()),
     path("api/v1/profile/password/", ChangePasswordView.as_view()),
     path("api/v1/", include(router.urls)),
+    re_path(r"^api/v1/(?P<path>.*)$", api_not_found),
+    re_path(r"^assets/(?P<path>.*)$", serve, {"document_root": settings.FRONTEND_DIST_DIR / "assets"}),
+    re_path(r"^(?P<path>[^/]+\.(?:ico|png|jpg|jpeg|svg|webp|txt|json|webmanifest))$", serve, {"document_root": settings.FRONTEND_DIST_DIR}),
+    re_path(r"^(?!api/|admin/|media/|static/|assets/).*$", frontend_index),
 ]
 
 if settings.DEBUG:

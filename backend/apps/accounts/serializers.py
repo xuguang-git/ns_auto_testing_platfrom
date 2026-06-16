@@ -176,12 +176,16 @@ class UserSerializer(serializers.ModelSerializer):
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    password_cipher = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    key_id = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    nonce = serializers.CharField(write_only=True, required=False, allow_blank=True)
     remember_me = serializers.BooleanField(default=False)
 
     def validate(self, attrs):
         request = self.context.get("request")
-        user = authenticate(request=request, username=attrs["username"], password=attrs["password"])
+        password = attrs.get("password") or self.context.get("password") or ""
+        user = authenticate(request=request, username=attrs["username"], password=password)
         if not user:
             raise serializers.ValidationError("用户名或密码错误")
         profile = ensure_profile(user)

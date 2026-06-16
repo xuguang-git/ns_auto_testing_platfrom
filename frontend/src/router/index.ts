@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from "vue-router";
 
 import MainLayout from "@/layouts/MainLayout.vue";
+import { useAuthStore } from "@/stores/auth";
 
 const routes: RouteRecordRaw[] = [
   { path: "/login", name: "login", component: () => import("@/views/LoginView.vue") },
@@ -45,10 +46,18 @@ const router = createRouter({
   routes,
 });
 
-router.beforeEach((to) => {
-  const token = localStorage.getItem("ns_token") || sessionStorage.getItem("ns_token");
-  if (to.path !== "/login" && !token) return { path: "/login", query: { redirect: to.fullPath } };
-  if (to.path === "/login" && token) return "/dashboard";
+router.beforeEach(async (to) => {
+  const auth = useAuthStore();
+  if (!auth.checked) {
+    try {
+      await auth.loadMe();
+    } catch {
+      auth.user = null;
+      auth.checked = true;
+    }
+  }
+  if (to.path !== "/login" && !auth.isAuthenticated) return { path: "/login", query: { redirect: to.fullPath } };
+  if (to.path === "/login" && auth.isAuthenticated) return "/dashboard";
   return true;
 });
 
