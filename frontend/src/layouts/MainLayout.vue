@@ -17,11 +17,18 @@
             <span class="mgh-arrow" v-html="icons.chevron"></span>
           </button>
           <div class="menu-group-body">
-            <RouterLink v-for="item in group.items" :key="item.path" class="side-nav-item" :class="{ disabled: item.disabled }" :to="item.disabled ? route.path : item.path">
-              <span class="side-icon" v-html="item.icon"></span>
-              <span>{{ item.label }}</span>
-              <span v-if="item.tag" class="mi-tag">{{ item.tag }}</span>
-            </RouterLink>
+            <template v-for="item in group.items" :key="item.path">
+              <span v-if="item.disabled" class="side-nav-item disabled" :title="item.disabledReason || '暂不可用'">
+                <span class="side-icon" v-html="item.icon"></span>
+                <span>{{ item.label }}</span>
+                <span class="mi-tag">{{ item.tag || "暂不可用" }}</span>
+              </span>
+              <RouterLink v-else class="side-nav-item" :to="item.path">
+                <span class="side-icon" v-html="item.icon"></span>
+                <span>{{ item.label }}</span>
+                <span v-if="item.tag" class="mi-tag">{{ item.tag }}</span>
+              </RouterLink>
+            </template>
           </div>
         </section>
       </nav>
@@ -88,6 +95,7 @@ interface NavItem {
   section: string;
   tag?: string;
   disabled?: boolean;
+  disabledReason?: string;
 }
 
 interface NavGroup {
@@ -173,7 +181,7 @@ const navGroups: NavGroup[] = [
     label: "性能测试",
     icon: icons.performance,
     items: [
-      { label: "性能测试", path: "/performance-testing", icon: icons.performance, section: "性能测试" },
+      { label: "性能测试", path: "/performance-testing", icon: icons.performance, section: "性能测试", disabled: true, tag: "暂不可用", disabledReason: "性能测试文件已清理，功能暂时关闭" },
     ],
   },
   {

@@ -22,8 +22,6 @@ ACCESS_COOKIE_NAME = "ns_access_token"
 REFRESH_COOKIE_NAME = "ns_refresh_token"
 LOGIN_CRYPTO_CACHE_PREFIX = "login_crypto:"
 LOGIN_CRYPTO_TTL_SECONDS = 300
-ACCESS_TOKEN_SECONDS = 2 * 60 * 60
-REFRESH_TOKEN_SECONDS = 15 * 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -45,13 +43,13 @@ def issue_tokens(user, request=None, remember_me: bool = False) -> IssuedTokens:
     access_token = generate_token(64)
     refresh_token = generate_token(64)
     now = timezone.now()
-    refresh_seconds = 30 * 24 * 60 * 60 if remember_me else REFRESH_TOKEN_SECONDS
+    refresh_seconds = _remember_me_refresh_token_seconds() if remember_me else _refresh_token_seconds()
     record = AuthToken.objects.create(
         key=generate_token(32),
         user=user,
         access_token_hash=token_hash(access_token),
         refresh_token_hash=token_hash(refresh_token),
-        access_expires_at=now + timedelta(seconds=ACCESS_TOKEN_SECONDS),
+        access_expires_at=now + timedelta(seconds=_access_token_seconds()),
         refresh_expires_at=now + timedelta(seconds=refresh_seconds),
         last_used_at=now,
     )
@@ -110,7 +108,7 @@ def rotate_tokens(refresh_token: str) -> IssuedTokens:
     new_refresh_token = generate_token(64)
     record.access_token_hash = token_hash(access_token)
     record.refresh_token_hash = token_hash(new_refresh_token)
-    record.access_expires_at = now + timedelta(seconds=ACCESS_TOKEN_SECONDS)
+    record.access_expires_at = now + timedelta(seconds=_access_token_seconds())
     record.last_used_at = now
     record.save(update_fields=["access_token_hash", "refresh_token_hash", "access_expires_at", "last_used_at"])
     return IssuedTokens(access_token=access_token, refresh_token=new_refresh_token, record=record)
@@ -131,13 +129,13 @@ def set_auth_cookies(response, issued: IssuedTokens) -> None:
     response.set_cookie(
         ACCESS_COOKIE_NAME,
         issued.access_token,
-        max_age=ACCESS_TOKEN_SECONDS,
+        max_age=_access_token_seconds(),
         httponly=True,
         secure=cookie_secure(),
         samesite="Lax",
         path="/",
     )
-    refresh_max_age = int((issued.record.refresh_expires_at - timezone.now()).total_seconds()) if issued.record.refresh_expires_at else REFRESH_TOKEN_SECONDS
+    refresh_max_age = int((issued.record.refresh_expires_at - timezone.now()).total_seconds()) if issued.record.refresh_expires_at else _refresh_token_seconds()
     response.set_cookie(
         REFRESH_COOKIE_NAME,
         issued.refresh_token,
@@ -152,6 +150,26 @@ def set_auth_cookies(response, issued: IssuedTokens) -> None:
 def clear_auth_cookies(response) -> None:
     response.delete_cookie(ACCESS_COOKIE_NAME, path="/", samesite="Lax")
     response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/v1/auth/", samesite="Lax")
+
+
+def _access_token_seconds() -> int:
+    return _positive_setting("ACCESS_TOKEN_SECONDS", 24 * 60 * 60)
+
+
+def _refresh_token_seconds() -> int:
+    return _positive_setting("REFRESH_TOKEN_SECONDS", 15 * 24 * 60 * 60)
+
+
+def _remember_me_refresh_token_seconds() -> int:
+    return _positive_setting("REMEMBER_ME_REFRESH_TOKEN_SECONDS", 30 * 24 * 60 * 60)
+
+
+def _positive_setting(name: str, default: int) -> int:
+    try:
+        value = int(getattr(settings, name, default))
+    except (TypeError, ValueError):
+        value = default
+    return max(60, value)
 
 
 def create_login_crypto_payload() -> dict[str, Any]:

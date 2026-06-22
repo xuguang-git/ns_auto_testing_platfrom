@@ -1,13 +1,13 @@
 <template>
   <div class="module-v11">
-    <aside class="module-tree">
-      <div class="tree-toolbar">
+    <aside class="module-tree unified-tree-panel">
+      <div class="tree-toolbar unified-tree-head">
         <strong>平台目录</strong>
         <el-button size="small" type="primary" @click="openCreate">新增</el-button>
       </div>
-      <button class="tree-node" :class="{ active: !selectedPlatform && !selectedModule }" @click="selectAll">全部平台</button>
+      <button class="tree-node unified-tree-node" :class="{ active: !selectedPlatform && !selectedModule }" @click="selectAll">全部平台</button>
       <section v-for="platform in platforms" :key="platform.id">
-        <button class="tree-node platform" :class="{ active: selectedPlatform === platform.id && !selectedModule }" @click="selectPlatform(platform.id)">
+        <button class="tree-node platform unified-tree-node" :class="{ active: selectedPlatform === platform.id && !selectedModule }" @click="selectPlatform(platform.id)">
           <span class="tree-node-main">
             <button v-if="platformHasChildren(platform)" class="tree-toggle-btn" @click.stop="togglePlatform(platform.id)">
               <span class="tree-toggle" :class="{ expanded: isPlatformExpanded(platform.id) }">›</span>
@@ -19,7 +19,7 @@
         <template v-if="isPlatformExpanded(platform.id)">
           <template v-for="module in rootModulesByPlatform(platform)" :key="module.id">
             <button
-              class="tree-node child"
+              class="tree-node child unified-tree-node"
               :class="{ active: selectedModule === module.id }"
               @click="selectModule(module.id, platform.id)"
             >
@@ -34,7 +34,7 @@
               v-for="child in childModules(module.id)"
               v-show="isModuleExpanded(module.id)"
               :key="child.id"
-              class="tree-node child sub-child"
+              class="tree-node child sub-child unified-tree-node"
               :class="{ active: selectedModule === child.id }"
               @click="selectModule(child.id, platform.id)"
             >

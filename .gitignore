@@ -1,4 +1,5 @@
 .idea/
+AGENTS.md
 .venv/
 venv/
 __pycache__/

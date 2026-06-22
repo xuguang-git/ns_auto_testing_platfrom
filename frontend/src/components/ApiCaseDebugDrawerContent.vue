@@ -172,7 +172,6 @@ const LogPreview = defineComponent({
 .debug-panels { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .debug-panel { min-height: 0; border: 1px solid var(--el-border-color-light); border-radius: 8px; padding: 12px; overflow: auto; }
 .panel-title { margin-bottom: 10px; }
-.method-mini { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; height: 20px; border-radius: 4px; font-size: 12px; background: #e8f3ff; color: #1f6feb; }
 .kv-preview { display: grid; gap: 8px; }
 .kv-preview-row { display: grid; grid-template-columns: minmax(120px, 180px) minmax(160px, 1fr) minmax(100px, 180px); gap: 8px; align-items: center; min-height: 32px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .kv-preview-row span { font-weight: 600; }

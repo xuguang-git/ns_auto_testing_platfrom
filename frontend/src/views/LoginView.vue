@@ -9,12 +9,12 @@
       <div class="login-card">
         <h2>登录</h2>
         <p>使用平台账号进入工作台</p>
-        <el-form :model="form" @keyup.enter="submit">
+        <el-form :model="form" autocomplete="off" @keyup.enter="submit">
           <el-form-item>
-            <el-input v-model="form.username" size="large" placeholder="用户名" />
+            <el-input v-model="form.username" size="large" placeholder="用户名" autocomplete="off" />
           </el-form-item>
           <el-form-item>
-            <el-input v-model="form.password" size="large" type="password" show-password placeholder="密码" />
+            <el-input v-model="form.password" size="large" type="password" show-password placeholder="密码" autocomplete="new-password" />
           </el-form-item>
           <div class="login-options">
             <el-checkbox v-model="form.remember_me">记住登录</el-checkbox>
@@ -37,7 +37,7 @@ const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
 const loading = ref(false);
-const form = reactive({ username: "admin", password: "", remember_me: true });
+const form = reactive({ username: "", password: "", remember_me: true });
 
 const submit = async () => {
   if (!form.username || !form.password) {

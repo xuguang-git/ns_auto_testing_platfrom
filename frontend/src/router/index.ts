@@ -1,7 +1,10 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from "vue-router";
+import { ElMessage } from "element-plus";
 
 import MainLayout from "@/layouts/MainLayout.vue";
 import { useAuthStore } from "@/stores/auth";
+
+const DISABLED_ROUTE_PATHS = new Set(["/performance-testing"]);
 
 const routes: RouteRecordRaw[] = [
   { path: "/login", name: "login", component: () => import("@/views/LoginView.vue") },
@@ -58,6 +61,10 @@ router.beforeEach(async (to) => {
   }
   if (to.path !== "/login" && !auth.isAuthenticated) return { path: "/login", query: { redirect: to.fullPath } };
   if (to.path === "/login" && auth.isAuthenticated) return "/dashboard";
+  if (DISABLED_ROUTE_PATHS.has(to.path)) {
+    ElMessage.warning("性能测试功能暂时关闭");
+    return "/dashboard";
+  }
   return true;
 });
 

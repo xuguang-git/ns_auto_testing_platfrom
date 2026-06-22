@@ -1,7 +1,7 @@
 <template>
   <div class="api-v2-shell">
-    <aside class="api-v2-tree">
-      <div class="tree-top">
+    <aside class="api-v2-tree unified-tree-panel">
+      <div class="tree-top unified-tree-head">
         <div class="api-work-title">
           <strong>接口管理</strong>
           <span>{{ apis.length }} 个接口</span>
@@ -11,15 +11,15 @@
       <div class="tree-filter">
         <el-input v-model="keyword" placeholder="搜索接口名称或路径" clearable />
       </div>
-      <div class="tree-scroll">
+      <div class="tree-scroll unified-tree-body">
         <section v-for="platform in platformOptions" :key="platform.code" class="tree-platform">
-          <button class="platform-title tree-branch-title" @click="togglePlatform(platform.code)">
+          <button class="platform-title tree-branch-title unified-tree-node" @click="togglePlatform(platform.code)">
             <span v-if="platformHasChildren(platform.code)" class="tree-toggle" :class="{ expanded: isPlatformExpanded(platform.code) }">›</span>
             <span>{{ platform.name }}</span>
           </button>
           <template v-if="isPlatformExpanded(platform.code)">
             <template v-for="module in rootModulesForPlatform(platform.code)" :key="module.id">
-              <button class="module-title tree-branch-title" @click="toggleModule(module.id)">
+              <button class="module-title tree-branch-title unified-tree-node" @click="toggleModule(module.id)">
                 <span v-if="moduleHasChildren(platform.code, module.id)" class="tree-toggle" :class="{ expanded: isModuleExpanded(module.id) }">›</span>
                 <span>{{ module.name }}</span>
               </button>
@@ -27,7 +27,7 @@
                 <button
                   v-for="api in apisByModule(platform.code, module.id)"
                   :key="api.id"
-                  class="api-node-v2"
+                  class="api-node-v2 unified-tree-node"
                   :class="{ active: selectedApi?.id === api.id }"
                   @click="selectApi(api)"
                 >
@@ -38,7 +38,7 @@
             <button
               v-for="api in apisWithoutModule(platform.code)"
               :key="api.id"
-              class="api-node-v2"
+              class="api-node-v2 unified-tree-node"
               :class="{ active: selectedApi?.id === api.id }"
               @click="selectApi(api)"
             >

@@ -14,6 +14,30 @@ from apps.projects.models import (
     Project,
     TestDataSource,
 )
+from apps.projects.services import get_default_project
+
+
+class DefaultProjectSerializerMixin:
+    project_unique_fields: tuple[str, ...] = ()
+
+    def get_project_value(self, attrs):
+        return attrs.get("project") or getattr(self.instance, "project", None) or get_default_project()
+
+    def validate_project_unique(self, attrs):
+        if not self.project_unique_fields:
+            return
+        project = self.get_project_value(attrs)
+        filters = {"project": project}
+        for field in self.project_unique_fields:
+            value = attrs.get(field, getattr(self.instance, field, None))
+            filters[field] = value
+        if any(value is None for value in filters.values()):
+            return
+        queryset = self.Meta.model.objects.filter(**filters)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("同一项目下已存在相同名称的数据源。")
 
 
 class ProjectSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
@@ -188,9 +212,10 @@ class DataFactoryCapabilitySerializer(OperatorFieldsMixin, serializers.ModelSeri
         read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name", "environment_name"]
 
 
-class TestDataSourceSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
+class TestDataSourceSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):
     environment_name = serializers.CharField(source="environment.name", read_only=True)
     database_connection_name = serializers.CharField(source="database_connection.name", read_only=True)
+    project_unique_fields = ("name",)
 
     class Meta:
         model = TestDataSource
@@ -208,12 +233,15 @@ class TestDataSourceSerializer(OperatorFieldsMixin, serializers.ModelSerializer)
             "run_count",
         ]
         extra_kwargs = {"project": {"required": False}}
+        validators = []
 
     def validate_sql(self, value):
         validate_select_sql(value)
         return value
 
     def validate(self, attrs):
+        attrs["project"] = self.get_project_value(attrs)
+        self.validate_project_unique(attrs)
         connection = attrs.get("database_connection") or getattr(self.instance, "database_connection", None)
         environment = attrs.get("environment") or getattr(self.instance, "environment", None)
         if connection and environment and connection.environment_id != environment.id:

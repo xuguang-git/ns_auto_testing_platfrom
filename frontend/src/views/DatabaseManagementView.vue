@@ -128,6 +128,25 @@
         <pre>{{ JSON.stringify((runResult.rows || []).slice(0, 20), null, 2) }}</pre>
       </div>
     </el-dialog>
+
+    <el-dialog v-model="runVariableDialog" title="试运行数据源" width="680px">
+      <div class="run-variable-editor">
+        <p class="muted-text">SQL 中可使用 &#123;&#123; variable_name &#125;&#125; 引用变量；场景执行时会自动使用前序步骤上下文变量。</p>
+        <div class="variable-row variable-head">
+          <span>变量名</span><span>变量值</span><span></span>
+        </div>
+        <div v-for="(item, index) in runVariables" :key="item.uid" class="variable-row">
+          <el-input v-model="item.key" placeholder="order_no" />
+          <el-input v-model="item.value" placeholder="变量值" />
+          <el-button link class="danger-link" @click="removeRunVariable(index)">删除</el-button>
+        </div>
+        <el-button size="small" @click="addRunVariable">新增变量</el-button>
+      </div>
+      <template #footer>
+        <el-button @click="runVariableDialog = false">取消</el-button>
+        <el-button type="primary" :loading="runningSourceId === pendingRunSource?.id" @click="confirmRunSource">运行</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -139,6 +158,7 @@ import { platformApi, unwrapList } from "@/api/platform";
 import PageHeader from "@/components/PageHeader.vue";
 
 interface ExtractorForm { uid: number; name: string; column: string; mode: string; row: number }
+interface RunVariableForm { uid: number; key: string; value: string }
 
 const activeTab = ref("connections");
 const loading = ref(false);
@@ -154,7 +174,10 @@ const sourceKeyword = ref("");
 const sourceConnectionFilter = ref<number>();
 const sourceDialog = ref(false);
 const runDialog = ref(false);
+const runVariableDialog = ref(false);
 const runResult = ref<any>();
+const pendingRunSource = ref<any>();
+const runVariables = ref<RunVariableForm[]>([]);
 
 const sourceForm = reactive({
   id: undefined as number | undefined,
@@ -226,6 +249,8 @@ const syncSourceEnvironment = () => {
 };
 const addExtractor = () => sourceForm.extractors.push({ uid: Date.now() + Math.floor(Math.random() * 10000), name: "", column: "", mode: "first", row: 0 });
 const removeExtractor = (index: number) => sourceForm.extractors.splice(index, 1);
+const addRunVariable = () => runVariables.value.push({ uid: Date.now() + Math.floor(Math.random() * 10000), key: "", value: "" });
+const removeRunVariable = (index: number) => runVariables.value.splice(index, 1);
 
 const openSourceDialog = (row?: any) => {
   Object.assign(sourceForm, {
@@ -292,12 +317,40 @@ const removeSource = async (row: any) => {
 };
 
 const runSource = async (row: any) => {
+  pendingRunSource.value = row;
+  runVariables.value = extractSqlVariables(row.sql).map((key) => ({ uid: Date.now() + Math.floor(Math.random() * 10000), key, value: "" }));
+  if (!runVariables.value.length) addRunVariable();
+  runVariableDialog.value = true;
+};
+
+const extractSqlVariables = (sql: string) => {
+  const names: string[] = [];
+  const pattern = /{{\s*([a-zA-Z0-9_.-]+)\s*}}/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(sql || ""))) {
+    if (!names.includes(match[1])) names.push(match[1]);
+  }
+  return names;
+};
+
+const buildRunVariables = () => runVariables.value.reduce((result, item) => {
+  const key = item.key.trim();
+  if (key) result[key] = item.value;
+  return result;
+}, {} as Record<string, string>);
+
+const confirmRunSource = async () => {
+  const row = pendingRunSource.value;
+  if (!row) return;
   runningSourceId.value = row.id;
   try {
-    const { data } = await platformApi.runTestDataSource(row.id, {});
+    const { data } = await platformApi.runTestDataSource(row.id, { variables: buildRunVariables() });
     runResult.value = data.result;
+    runVariableDialog.value = false;
     runDialog.value = true;
     await load();
+  } catch {
+    // 全局 HTTP 拦截器已展示提示，这里只保持当前页面不跳转。
   } finally {
     runningSourceId.value = undefined;
   }
