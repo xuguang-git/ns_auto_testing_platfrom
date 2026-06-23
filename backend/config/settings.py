@@ -28,6 +28,7 @@ env = environ.Env(
     REMEMBER_ME_REFRESH_TOKEN_SECONDS=(int, 30 * 24 * 60 * 60),
     USER_SESSION_SECONDS=(int, 24 * 60 * 60),
     REMEMBER_ME_USER_SESSION_SECONDS=(int, 30 * 24 * 60 * 60),
+    FRONTEND_BASE_URL=(str, "http://localhost:5173"),
 )
 env.read_env(BASE_DIR / ".env")
 
@@ -114,6 +115,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 FRONTEND_DIST_DIR = BASE_DIR.parent / "frontend" / "dist"
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL").rstrip("/")
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 

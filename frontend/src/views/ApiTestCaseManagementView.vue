@@ -676,11 +676,11 @@ const saveExtractorVariable = async (item: ExtractorRow) => {
 };
 
 const load = async () => {
-  const [apiResp, platformResp, moduleResp, envResp, dataSourceResp] = await Promise.all([platformApi.apiDefinitions(), platformApi.platforms(), platformApi.apiModules(), platformApi.environments(), platformApi.testDataSources()]);
+  const [apiResp, platformData, moduleData, envData, dataSourceResp] = await Promise.all([platformApi.apiDefinitions(), platformApi.cachedPlatforms(), platformApi.cachedApiModules(), platformApi.cachedEnvironments(), platformApi.testDataSources()]);
   apis.value = unwrapList<ApiDefinition>(apiResp.data);
-  platforms.value = unwrapList(platformResp.data);
-  modules.value = unwrapList(moduleResp.data);
-  environments.value = unwrapList(envResp.data);
+  platforms.value = unwrapList(platformData as any);
+  modules.value = unwrapList(moduleData as any);
+  environments.value = unwrapList(envData as any);
   testDataSources.value = unwrapList(dataSourceResp.data);
   expandedPlatforms.value = platformOptions.value.filter((item) => platformHasChildren(item.code)).map((item) => item.code);
   expandedModules.value = modules.value.filter((item) => moduleHasChildren(modulePlatformCode(item), item.id)).map((item) => item.id);

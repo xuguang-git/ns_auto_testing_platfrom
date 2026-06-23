@@ -142,6 +142,8 @@ class ApiSuite(OwnedModel):
     description = models.TextField(blank=True)
     platforms = models.JSONField(default=list, blank=True)
     tags = models.JSONField(default=list, blank=True)
+    case_ids = models.JSONField(default=list, blank=True, db_comment="套件包含的单接口用例ID列表。")
+    run_config = models.JSONField(default=dict, blank=True, db_comment="套件运行配置JSON，如运行环境、运行模式、执行器和推送开关。")
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -160,6 +162,7 @@ class ApiScenario(OwnedModel):
     description = models.TextField(blank=True)
     priority = models.CharField(max_length=8, default="P1")
     tags = models.JSONField(default=list, blank=True)
+    run_config = models.JSONField(default=dict, blank=True)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
@@ -294,6 +297,7 @@ apply_model_comments(ApiScenario, "接口场景用例表：按业务流程编排
     "description": "场景说明。",
     "priority": "优先级。",
     "tags": "场景标签列表。",
+    "run_config": "场景运行配置JSON，如测试数据、循环次数、线程数、执行机和通知配置。",
     "sort_order": "排序值。",
     "is_active": "是否启用。",
 })

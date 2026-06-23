@@ -184,7 +184,7 @@ const platformCards = computed(() =>
 
 const quickActions = computed(() => [
   { type: "blue", icon: "⌁", title: "接口调试", desc: "调试单个 API 接口", path: "/api-debug" },
-  { type: "green", icon: "▶", title: "执行全量测试", desc: `运行全部 ${totalCases.value || 66} 个用例`, path: "/test-runs" },
+  { type: "green", icon: "▶", title: "查看执行报告", desc: `查看全部 ${totalCases.value || 66} 个用例的执行结果`, path: "/reports" },
   { type: "amber", icon: "☑", title: "维护接口资产", desc: "新增、编辑接口定义", path: "/api-testing" },
   { type: "red", icon: "↗", title: "查看失败报告", desc: "定位断言与响应差异", path: "/reports" },
 ]);

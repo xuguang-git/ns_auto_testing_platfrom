@@ -1,4 +1,5 @@
 import { http } from "@/api/http";
+import { getOrLoadResource } from "@/api/resourceCache";
 
 export interface ListResponse<T> {
   count: number;
@@ -11,14 +12,17 @@ export const unwrapList = <T>(data: ListResponse<T> | T[]): T[] => {
 
 export const platformApi = {
   platforms: () => http.get("/platforms/"),
+  cachedPlatforms: () => getOrLoadResource("platform:platforms", async () => (await http.get("/platforms/", { cache: false })).data),
   createPlatform: (payload: Record<string, unknown>) => http.post("/platforms/", payload),
   updatePlatform: (id: number, payload: Record<string, unknown>) => http.patch(`/platforms/${id}/`, payload),
   deletePlatform: (id: number) => http.delete(`/platforms/${id}/`),
   projects: () => http.get("/projects/"),
+  cachedProjects: () => getOrLoadResource("platform:projects", async () => (await http.get("/projects/", { cache: false })).data),
   createProject: (payload: Record<string, unknown>) => http.post("/projects/", payload),
   updateProject: (id: number, payload: Record<string, unknown>) => http.patch(`/projects/${id}/`, payload),
   deleteProject: (id: number) => http.delete(`/projects/${id}/`),
   environments: () => http.get("/environments/"),
+  cachedEnvironments: () => getOrLoadResource("platform:environments", async () => (await http.get("/environments/", { cache: false })).data),
   createEnvironment: (payload: Record<string, unknown>) => http.post("/environments/", payload),
   updateEnvironment: (id: number, payload: Record<string, unknown>) => http.patch(`/environments/${id}/`, payload),
   deleteEnvironment: (id: number) => http.delete(`/environments/${id}/`),
@@ -58,10 +62,12 @@ export const platformApi = {
   updateApiMockRule: (id: number, payload: Record<string, unknown>) => http.patch(`/api-mock-rules/${id}/`, payload),
   deleteApiMockRule: (id: number) => http.delete(`/api-mock-rules/${id}/`),
   apiModules: () => http.get("/api-modules/"),
+  cachedApiModules: () => getOrLoadResource("platform:api-modules", async () => (await http.get("/api-modules/", { cache: false })).data),
   createApiModule: (payload: Record<string, unknown>) => http.post("/api-modules/", payload),
   updateApiModule: (id: number, payload: Record<string, unknown>) => http.patch(`/api-modules/${id}/`, payload),
   deleteApiModule: (id: number) => http.delete(`/api-modules/${id}/`),
   apiSuites: (params?: Record<string, unknown>) => http.get("/api-suites/", { params }),
+  cachedApiSuites: (params?: Record<string, unknown>) => getOrLoadResource(`platform:api-suites:${JSON.stringify(params || {})}`, async () => (await http.get("/api-suites/", { params, cache: false })).data),
   createApiSuite: (payload: Record<string, unknown>) => http.post("/api-suites/", payload),
   updateApiSuite: (id: number, payload: Record<string, unknown>) => http.patch(`/api-suites/${id}/`, payload),
   deleteApiSuite: (id: number) => http.delete(`/api-suites/${id}/`),
@@ -73,10 +79,6 @@ export const platformApi = {
   createApiStep: (payload: Record<string, unknown>) => http.post("/api-steps/", payload),
   updateApiStep: (id: number, payload: Record<string, unknown>) => http.patch(`/api-steps/${id}/`, payload),
   deleteApiStep: (id: number) => http.delete(`/api-steps/${id}/`),
-  testPlans: () => http.get("/test-plans/"),
-  createTestPlan: (payload: Record<string, unknown>) => http.post("/test-plans/", payload),
-  updateTestPlan: (id: number, payload: Record<string, unknown>) => http.patch(`/test-plans/${id}/`, payload),
-  deleteTestPlan: (id: number) => http.delete(`/test-plans/${id}/`),
   testRuns: () => http.get("/test-runs/", { cache: false }),
   scheduledPlans: (params?: Record<string, unknown>) => http.get("/scheduled-plans/", { params, cache: false }),
   createScheduledPlan: (payload: Record<string, unknown>) => http.post("/scheduled-plans/", payload),
@@ -84,6 +86,16 @@ export const platformApi = {
   deleteScheduledPlan: (id: number) => http.delete(`/scheduled-plans/${id}/`),
   toggleScheduledPlan: (id: number) => http.post(`/scheduled-plans/${id}/toggle/`),
   runScheduledPlanNow: (id: number) => http.post(`/scheduled-plans/${id}/run-now/`, {}, { timeout: 120000 }),
+  notificationChannels: (params?: Record<string, unknown>) => http.get("/notification-channels/", { params, cache: false }),
+  createNotificationChannel: (payload: Record<string, unknown>) => http.post("/notification-channels/", payload),
+  updateNotificationChannel: (id: number, payload: Record<string, unknown>) => http.patch(`/notification-channels/${id}/`, payload),
+  deleteNotificationChannel: (id: number) => http.delete(`/notification-channels/${id}/`),
+  notificationTemplates: (params?: Record<string, unknown>) => http.get("/notification-templates/", { params, cache: false }),
+  createNotificationTemplate: (payload: Record<string, unknown>) => http.post("/notification-templates/", payload),
+  updateNotificationTemplate: (id: number, payload: Record<string, unknown>) => http.patch(`/notification-templates/${id}/`, payload),
+  deleteNotificationTemplate: (id: number) => http.delete(`/notification-templates/${id}/`),
+  notificationTemplateVariables: () => http.get("/notification-templates/variables/", { cache: false }),
+  notificationSendLogs: (params?: Record<string, unknown>) => http.get("/notification-send-logs/", { params, cache: false }),
   performanceExecutor: () => http.get("/performance/executor/", { cache: false }),
   performanceScripts: (params?: Record<string, unknown>) => http.get("/performance/scripts/", { params }),
   createPerformanceScript: (payload: FormData) => http.post("/performance/scripts/", payload),
@@ -122,5 +134,4 @@ export const platformApi = {
   deleteUiAction: (id: number) => http.delete(`/ui-actions/${id}/`),
   runUiCase: (id: number, payload?: Record<string, unknown>) => http.post(`/ui-cases/${id}/run/`, payload || {}, { timeout: 120000 }),
   debugApi: (payload: Record<string, unknown>) => http.post("/api-definitions/debug/", payload),
-  runPlan: (id: number, environment?: number) => http.post(`/test-plans/${id}/run/`, { environment }),
 };
