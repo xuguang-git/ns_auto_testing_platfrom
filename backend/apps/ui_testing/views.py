@@ -2,6 +2,7 @@ from rest_framework import decorators, response, viewsets
 
 from apps.accounts.models import AuditLog
 from apps.accounts.permissions import action_permission
+from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.services import get_default_project
 from apps.ui_testing.models import UiAction, UiCase, UiElement, UiPage, UiSuite
@@ -9,13 +10,20 @@ from apps.ui_testing.serializers import UiActionSerializer, UiCaseSerializer, Ui
 from apps.ui_testing.services import run_ui_case, validate_ui_element
 
 
-class UiSuiteViewSet(OperatorAuditModelViewSet):
+class UiSuiteViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = UiSuite.objects.select_related("project").all()
     serializer_class = UiSuiteSerializer
     permission_classes = [action_permission("api.read", "api.write", "api.delete")]
     filterset_fields = ["project"]
     search_fields = ["name", "description"]
     audit_module = "ui_suite"
+    delete_object_label = "UI测试套件"
+    delete_guard_rules = (
+        DeleteGuardRule("cases", "UI用例"),
+        DeleteGuardRule("case_memberships", "UI用例关联"),
+        DeleteGuardRule("pages", "页面目录"),
+        DeleteGuardRule("elements", "定位元素"),
+    )
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
@@ -49,13 +57,17 @@ class UiCaseViewSet(OperatorAuditModelViewSet):
         return response.Response(run_ui_case(case, request.data))
 
 
-class UiElementViewSet(OperatorAuditModelViewSet):
+class UiElementViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = UiElement.objects.select_related("suite", "page_node").all()
     serializer_class = UiElementSerializer
     permission_classes = [action_permission("api.read", "api.write", "api.delete")]
     filterset_fields = ["suite", "page_node", "locator_type", "is_active"]
     search_fields = ["name", "page", "page_node__name", "selector", "description"]
     audit_module = "ui_element"
+    delete_object_label = "定位元素"
+    delete_guard_rules = (
+        DeleteGuardRule("ui_cases", "UI用例"),
+    )
 
     @decorators.action(detail=True, methods=["post"], url_path="validate")
     def validate_locator(self, request, pk=None):
@@ -63,13 +75,18 @@ class UiElementViewSet(OperatorAuditModelViewSet):
         return response.Response(validate_ui_element(element, request.data))
 
 
-class UiPageViewSet(OperatorAuditModelViewSet):
+class UiPageViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = UiPage.objects.select_related("suite", "parent").prefetch_related("children", "elements").all()
     serializer_class = UiPageSerializer
     permission_classes = [action_permission("api.read", "api.write", "api.delete")]
     filterset_fields = ["suite", "parent", "is_active"]
     search_fields = ["name", "path", "description"]
     audit_module = "ui_page"
+    delete_object_label = "页面目录"
+    delete_guard_rules = (
+        DeleteGuardRule("children", "子页面"),
+        DeleteGuardRule("elements", "定位元素"),
+    )
 
 
 class UiActionViewSet(OperatorAuditModelViewSet):

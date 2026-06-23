@@ -1,7 +1,10 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from "vue-router";
+import { ElMessage } from "element-plus";
 
 import MainLayout from "@/layouts/MainLayout.vue";
 import { useAuthStore } from "@/stores/auth";
+
+const DISABLED_ROUTE_PATHS = new Set(["/performance-testing"]);
 
 const routes: RouteRecordRaw[] = [
   { path: "/login", name: "login", component: () => import("@/views/LoginView.vue") },
@@ -14,7 +17,6 @@ const routes: RouteRecordRaw[] = [
       { path: "platforms", name: "platforms", component: () => import("@/views/PlatformListView.vue") },
       { path: "modules", name: "modules", component: () => import("@/views/ModuleListView.vue") },
       { path: "projects", name: "projects", component: () => import("@/views/ProjectsView.vue") },
-      { path: "test-plans", name: "testPlans", component: () => import("@/views/TestPlansView.vue") },
       { path: "api-testing", redirect: "/api-testing/apis" },
       { path: "api-testing/apis", name: "apiTestingApis", component: () => import("@/views/ApiTestingWorkbenchView.vue") },
       { path: "api-testing/cases", name: "apiTestingCases", component: () => import("@/views/ApiTestCaseManagementView.vue") },
@@ -29,9 +31,10 @@ const routes: RouteRecordRaw[] = [
       { path: "ui-testing/cases", name: "uiTestingCases", component: () => import("@/views/UiCasesView.vue") },
       { path: "ui-testing/elements", name: "uiElements", component: () => import("@/views/UiElementsView.vue") },
       { path: "performance-testing", name: "performanceTesting", component: () => import("@/views/PerformanceTestingView.vue") },
-      { path: "test-runs", name: "testRuns", component: () => import("@/views/TestRunsView.vue") },
       { path: "reports", name: "reports", component: () => import("@/views/ReportsView.vue") },
       { path: "scheduling", name: "scheduling", component: () => import("@/views/SchedulingView.vue") },
+      { path: "notifications", name: "notifications", component: () => import("@/views/NotificationManagementView.vue") },
+      { path: "notification-templates", name: "notificationTemplates", component: () => import("@/views/NotificationTemplateView.vue") },
       { path: "database-management", name: "databaseManagement", component: () => import("@/views/DatabaseManagementView.vue") },
       { path: "users", name: "users", component: () => import("@/views/UserManagementView.vue") },
       { path: "roles", name: "roles", component: () => import("@/views/RoleManagementView.vue") },
@@ -58,6 +61,10 @@ router.beforeEach(async (to) => {
   }
   if (to.path !== "/login" && !auth.isAuthenticated) return { path: "/login", query: { redirect: to.fullPath } };
   if (to.path === "/login" && auth.isAuthenticated) return "/dashboard";
+  if (DISABLED_ROUTE_PATHS.has(to.path)) {
+    ElMessage.warning("性能测试功能暂时关闭");
+    return "/dashboard";
+  }
   return true;
 });
 

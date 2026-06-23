@@ -1,16 +1,16 @@
 <template>
   <div class="ui-elements-page ui-elements-workbench">
-    <aside class="ui-page-tree-panel">
-      <div class="ui-panel-head">
+    <aside class="ui-page-tree-panel unified-tree-panel">
+      <div class="ui-panel-head unified-tree-head">
         <strong>页面结构</strong>
         <el-button size="small" type="primary" :disabled="!suiteFilter" @click="openPage()">新增</el-button>
       </div>
       <el-select v-model="suiteFilter" placeholder="套件" style="width: 100%" @change="onSuiteChange">
         <el-option v-for="suite in suites" :key="suite.id" :label="suite.name" :value="suite.id" />
       </el-select>
-      <div class="ui-page-tree">
-        <button class="ui-page-node" :class="{ active: !selectedPageId }" @click="selectPage(undefined)">
-          <span>全部页面</span>
+      <div class="ui-page-tree unified-tree-body">
+        <button class="ui-page-node unified-tree-node" :class="{ active: !selectedPageId }" @click="selectPage(undefined)">
+          <span class="unified-tree-name">全部页面</span>
         </button>
         <template v-for="page in rootPages" :key="page.id">
           <PageNode
@@ -168,6 +168,7 @@
 </template>
 
 <script setup lang="ts">
+import { Delete, Edit, Plus } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, defineComponent, h, onMounted, reactive, ref, type Component, type VNode } from "vue";
 
@@ -207,19 +208,22 @@ const PageNode: Component = defineComponent({
   },
   emits: ["select", "add-child", "edit", "remove"],
   setup(props, { emit }) {
+    const treeActionIcon = (icon: Component, title: string, onClick: () => void) =>
+      h("button", { class: "unified-tree-action", title, onClick }, [h(icon)]);
+
     return (): VNode => {
       const page = props.page as UiPage;
       const children = ((props.childrenMap as Record<number, UiPage[]>)[page.id] || []);
-      return h("div", { class: "ui-page-branch" }, [
-        h("div", { class: ["ui-page-node", { active: props.selectedId === page.id }] }, [
-          h("button", { class: "ui-page-name", onClick: () => emit("select", page.id) }, page.name),
-          h("span", { class: "ui-page-actions" }, [
-            h("button", { onClick: () => emit("add-child", page.id) }, "+"),
-            h("button", { onClick: () => emit("edit", page) }, "编"),
-            h("button", { onClick: () => emit("remove", page) }, "删"),
+      return h("div", { class: "ui-page-branch unified-tree-branch" }, [
+        h("div", { class: ["ui-page-node", "unified-tree-node", { active: props.selectedId === page.id }] }, [
+          h("button", { class: "ui-page-name unified-tree-name", onClick: () => emit("select", page.id) }, page.name),
+          h("span", { class: "ui-page-actions unified-tree-actions" }, [
+            treeActionIcon(Plus, "新增子页面", () => emit("add-child", page.id)),
+            treeActionIcon(Edit, "编辑页面", () => emit("edit", page)),
+            treeActionIcon(Delete, "删除页面", () => emit("remove", page)),
           ]),
         ]),
-        children.length ? h("div", { class: "ui-page-children" }, children.map((child): VNode =>
+        children.length ? h("div", { class: "ui-page-children unified-tree-children" }, children.map((child): VNode =>
           h(PageNode, {
             page: child,
             childrenMap: props.childrenMap,

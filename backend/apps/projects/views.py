@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from apps.accounts.models import AuditLog
 from apps.accounts.permissions import action_permission
 from apps.api_testing.models import ApiModule
+from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
 from apps.api_testing.services import clear_environment_request_control_cache
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.db_services import check_database_connection, execute_test_data_source, sync_configured_database_connections
@@ -22,7 +23,7 @@ from apps.projects.serializers import (
 from apps.projects.services import get_default_project
 
 
-class ProjectViewSet(OperatorAuditModelViewSet):
+class ProjectViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [action_permission("platform.read", "platform.write", "platform.delete")]
@@ -30,9 +31,19 @@ class ProjectViewSet(OperatorAuditModelViewSet):
     ordering_fields = ["name", "created_at", "updated_at"]
 
     audit_module = "project"
+    delete_object_label = "项目"
+    delete_guard_rules = (
+        DeleteGuardRule("environments", "环境配置"),
+        DeleteGuardRule("api_modules", "接口目录"),
+        DeleteGuardRule("api_definitions", "接口"),
+        DeleteGuardRule("api_test_cases", "单接口用例"),
+        DeleteGuardRule("api_suites", "测试套件"),
+        DeleteGuardRule("test_data_sources", "测试数据源"),
+        DeleteGuardRule("ui_suites", "UI测试套件"),
+    )
 
 
-class PlatformViewSet(OperatorAuditModelViewSet):
+class PlatformViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = Platform.objects.prefetch_related("api_modules").all()
     serializer_class = PlatformSerializer
     permission_classes = [action_permission("platform.read", "platform.write", "platform.delete")]
@@ -40,6 +51,10 @@ class PlatformViewSet(OperatorAuditModelViewSet):
     search_fields = ["name", "code", "description"]
     ordering_fields = ["sort_order", "created_at", "updated_at"]
     audit_module = "platform"
+    delete_object_label = "平台"
+    delete_guard_rules = (
+        DeleteGuardRule("api_modules", "接口目录"),
+    )
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -68,13 +83,25 @@ class PlatformViewSet(OperatorAuditModelViewSet):
         return Response(self.get_serializer(platform).data, status=status.HTTP_201_CREATED)
 
 
-class EnvironmentViewSet(OperatorAuditModelViewSet):
+class EnvironmentViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = Environment.objects.select_related("project").prefetch_related("variable_items", "pre_request_operations__modules", "request_controls").all()
     serializer_class = EnvironmentSerializer
     permission_classes = [action_permission("environment.read", "environment.write", "environment.delete")]
     filterset_fields = ["project", "env_type", "is_default", "is_readonly"]
     search_fields = ["name", "base_url"]
     audit_module = "environment"
+    delete_object_label = "环境"
+    delete_guard_rules = (
+        DeleteGuardRule("variable_items", "环境变量"),
+        DeleteGuardRule("pre_request_operations", "全局前置操作"),
+        DeleteGuardRule("request_controls", "请求控件"),
+        DeleteGuardRule("database_connections", "数据库连接"),
+        DeleteGuardRule("data_capabilities", "执行能力"),
+        DeleteGuardRule("test_data_sources", "测试数据源"),
+        DeleteGuardRule("api_scenarios", "场景用例"),
+        DeleteGuardRule("scheduled_plans", "定时任务"),
+        DeleteGuardRule("runs", "测试报告"),
+    )
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None

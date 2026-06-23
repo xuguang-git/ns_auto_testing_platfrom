@@ -1,46 +1,53 @@
 from celery import shared_task
 from django.utils import timezone
 
-from apps.api_testing.models import ApiDefinition
+from apps.api_testing.models import ApiTestCase
 from apps.api_testing.services import execute_debug_request
+from apps.scheduling.notification_services import dispatch_test_run_notifications
 from apps.test_runs.models import TestRun, TestRunStep
 
 
 @shared_task(bind=True)
-def run_test_plan(self, test_run_id: int) -> dict:
-    test_run = TestRun.objects.select_related("plan", "environment").get(pk=test_run_id)
+def run_api_suite(self, test_run_id: int) -> dict:
+    """执行一个测试套件，并把每个场景步骤和单接口用例写入执行明细。"""
+    test_run = TestRun.objects.select_related("suite", "environment").get(pk=test_run_id)
     test_run.status = TestRun.Status.RUNNING
     test_run.celery_task_id = self.request.id or test_run.celery_task_id
     test_run.started_at = timezone.now()
-    test_run.logs = _append_log(test_run.logs, "info", f"测试计划开始执行：{test_run.plan.name}")
+    test_run.logs = _append_log(test_run.logs, "info", f"测试套件开始执行：{test_run.suite.name}")
     test_run.save(update_fields=["status", "celery_task_id", "started_at", "logs", "updated_at"])
 
     total = passed = failed = skipped = 0
     sort_order = 0
 
     try:
-        scenarios = list(test_run.plan.api_scenarios.prefetch_related("steps").all())
-        if not scenarios:
-            for suite in test_run.plan.api_suites.prefetch_related("scenarios__steps").all():
-                scenarios.extend(list(suite.scenarios.all()))
+        suite = test_run.suite
+        run_config = suite.run_config or {}
+        timeout_seconds = int(run_config.get("timeout_seconds") or 30)
+        failure_strategy = run_config.get("failure_strategy") or "continue"
+        scenarios = list(suite.scenarios.prefetch_related("steps").filter(is_active=True))
 
-        if not scenarios and test_run.plan.api_ids:
-            for api in ApiDefinition.objects.filter(id__in=test_run.plan.api_ids, is_active=True).order_by("sort_order", "id"):
+        case_ids = suite.case_ids or []
+        if case_ids:
+            cases = ApiTestCase.objects.select_related("api").filter(id__in=case_ids, is_active=True, api__is_active=True).order_by("id")
+            for case in cases:
+                api = case.api
                 total += 1
                 sort_order += 1
+                request_override = case.request_override or {}
                 payload = {
-                    "environment": test_run.environment_id or test_run.plan.environment_id,
-                    "variables": test_run.plan.variables,
+                    "environment": test_run.environment_id or run_config.get("environment"),
+                    "variables": case.variables or {},
                     "platform": api.platform,
                     "module": api.module_id,
                     "method": api.method,
                     "path": api.path,
-                    "headers": api.headers,
-                    "query_params": api.query_params,
-                    "body": api.body,
-                    "auth_config": api.auth_config,
-                    "assertions": api.assertions,
-                    "timeout": test_run.plan.timeout_seconds,
+                    "headers": request_override.get("headers", api.headers),
+                    "query_params": request_override.get("query_params", api.query_params),
+                    "body": request_override.get("body", api.body),
+                    "auth_config": request_override.get("auth_config", api.auth_config),
+                    "assertions": case.assertions or api.assertions,
+                    "timeout": timeout_seconds,
                 }
                 result = execute_debug_request(payload)
                 step_passed = bool(result.get("ok") and result.get("passed"))
@@ -53,8 +60,8 @@ def run_test_plan(self, test_run_id: int) -> dict:
 
                 TestRunStep.objects.create(
                     run=test_run,
-                    scenario_name=test_run.plan.name,
-                    step_name=api.name,
+                    scenario_name="单接口用例",
+                    step_name=case.name,
                     status=step_status,
                     sort_order=sort_order,
                     request=result.get("request") or {},
@@ -64,19 +71,19 @@ def run_test_plan(self, test_run_id: int) -> dict:
                     error_message=result.get("error") or "",
                     duration_ms=(result.get("response") or {}).get("elapsed_ms") or 0,
                 )
-                test_run.logs = _append_log(test_run.logs, "info" if step_passed else "error", f"{api.name} {'通过' if step_passed else '失败'}")
+                test_run.logs = _append_log(test_run.logs, "info" if step_passed else "error", f"{case.name} {'通过' if step_passed else '失败'}")
 
-                if failed and test_run.plan.failure_strategy == test_run.plan.FailureStrategy.FAST_FAIL:
-                    skipped = max(len(test_run.plan.api_ids) - total, 0)
+                if failed and failure_strategy == "fast_fail":
+                    skipped = max(len(case_ids) - total, 0)
                     raise StopIteration
 
         for scenario in scenarios:
-            scenario_variables = dict(test_run.plan.variables or {})
+            scenario_variables = dict(run_config.get("variables") or {})
             for step in scenario.steps.filter(is_active=True):
                 total += 1
                 sort_order += 1
                 payload = {
-                    "environment": test_run.environment_id or test_run.plan.environment_id,
+                    "environment": test_run.environment_id or scenario.environment_id or run_config.get("environment"),
                     "variables": scenario_variables,
                     "platform": step.platform,
                     "module": step.api.module_id if step.api_id else None,
@@ -90,7 +97,7 @@ def run_test_plan(self, test_run_id: int) -> dict:
                     "post_test_data_sources": step.post_data_source_ids,
                     "extractors": step.extractors,
                     "assertions": step.assertions,
-                    "timeout": test_run.plan.timeout_seconds,
+                    "timeout": timeout_seconds,
                 }
                 result = execute_debug_request(payload)
                 scenario_variables.update(result.get("variables") or {})
@@ -117,7 +124,7 @@ def run_test_plan(self, test_run_id: int) -> dict:
                 )
                 test_run.logs = _append_log(test_run.logs, "info" if step_passed else "error", f"{scenario.name} / {step.name} {'通过' if step_passed else '失败'}")
 
-                if failed and test_run.plan.failure_strategy == test_run.plan.FailureStrategy.FAST_FAIL:
+                if failed and failure_strategy == "fast_fail":
                     skipped = _mark_remaining_skipped(test_run, scenarios, scenario.id, step.id, sort_order)
                     raise StopIteration
 
@@ -157,6 +164,7 @@ def run_test_plan(self, test_run_id: int) -> dict:
             "updated_at",
         ]
     )
+    dispatch_test_run_notifications(test_run)
     return summary
 
 

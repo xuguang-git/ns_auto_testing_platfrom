@@ -1,7 +1,7 @@
 <template>
   <div class="api-case-page">
-    <aside class="case-api-tree">
-      <div class="case-tree-head">
+    <aside class="case-api-tree unified-tree-panel">
+      <div class="case-tree-head unified-tree-head">
         <div>
           <strong>接口目录</strong>
           <span>{{ totalCaseCount }} 个用例</span>
@@ -11,9 +11,9 @@
       <div class="case-tree-filter">
         <el-input v-model="apiKeyword" placeholder="搜索目录名称" clearable />
       </div>
-      <div class="case-tree-body">
+      <div class="case-tree-body unified-tree-body">
         <section v-for="platform in platformOptions" :key="platform.code" class="case-platform">
-          <button class="platform-title tree-branch-title" @click="togglePlatform(platform.code)">
+          <button class="platform-title tree-branch-title unified-tree-node" @click="togglePlatform(platform.code)">
             <span class="tree-toggle-slot">
               <span v-if="platformHasChildren(platform.code)" class="tree-toggle" :class="{ expanded: isPlatformExpanded(platform.code) }">›</span>
             </span>
@@ -23,7 +23,7 @@
           <template v-if="isPlatformExpanded(platform.code)">
             <template v-for="module in rootModulesForPlatform(platform.code)" :key="module.id">
               <button
-                class="module-title tree-branch-title case-module-node"
+                class="module-title tree-branch-title case-module-node unified-tree-node"
                 :class="{ active: selectedModuleId === module.id }"
                 @click="selectModule(platform.code, module.id)"
               >
@@ -37,7 +37,7 @@
                 <button
                   v-for="child in childModules(module.id)"
                   :key="child.id"
-                  class="module-title tree-branch-title case-module-node child"
+                  class="module-title tree-branch-title case-module-node child unified-tree-node"
                   :class="{ active: selectedModuleId === child.id }"
                   @click="selectModule(platform.code, child.id)"
                 >
@@ -51,7 +51,7 @@
             </template>
             <button
               v-if="unassignedCaseCount(platform.code)"
-              class="module-title tree-branch-title case-module-node"
+              class="module-title tree-branch-title case-module-node unified-tree-node"
               :class="{ active: selectedModuleId === 'unassigned' && selectedPlatform === platform.code }"
               @click="selectModule(platform.code, 'unassigned')"
             >
@@ -676,11 +676,11 @@ const saveExtractorVariable = async (item: ExtractorRow) => {
 };
 
 const load = async () => {
-  const [apiResp, platformResp, moduleResp, envResp, dataSourceResp] = await Promise.all([platformApi.apiDefinitions(), platformApi.platforms(), platformApi.apiModules(), platformApi.environments(), platformApi.testDataSources()]);
+  const [apiResp, platformData, moduleData, envData, dataSourceResp] = await Promise.all([platformApi.apiDefinitions(), platformApi.cachedPlatforms(), platformApi.cachedApiModules(), platformApi.cachedEnvironments(), platformApi.testDataSources()]);
   apis.value = unwrapList<ApiDefinition>(apiResp.data);
-  platforms.value = unwrapList(platformResp.data);
-  modules.value = unwrapList(moduleResp.data);
-  environments.value = unwrapList(envResp.data);
+  platforms.value = unwrapList(platformData as any);
+  modules.value = unwrapList(moduleData as any);
+  environments.value = unwrapList(envData as any);
   testDataSources.value = unwrapList(dataSourceResp.data);
   expandedPlatforms.value = platformOptions.value.filter((item) => platformHasChildren(item.code)).map((item) => item.code);
   expandedModules.value = modules.value.filter((item) => moduleHasChildren(modulePlatformCode(item), item.id)).map((item) => item.id);

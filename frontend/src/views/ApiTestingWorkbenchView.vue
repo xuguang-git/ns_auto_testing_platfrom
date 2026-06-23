@@ -1,7 +1,7 @@
 <template>
   <div class="api-v2-shell">
-    <aside class="api-v2-tree">
-      <div class="tree-top">
+    <aside class="api-v2-tree unified-tree-panel">
+      <div class="tree-top unified-tree-head">
         <div class="api-work-title">
           <strong>接口管理</strong>
           <span>{{ apis.length }} 个接口</span>
@@ -11,15 +11,15 @@
       <div class="tree-filter">
         <el-input v-model="keyword" placeholder="搜索接口名称或路径" clearable />
       </div>
-      <div class="tree-scroll">
+      <div class="tree-scroll unified-tree-body">
         <section v-for="platform in platformOptions" :key="platform.code" class="tree-platform">
-          <button class="platform-title tree-branch-title" @click="togglePlatform(platform.code)">
+          <button class="platform-title tree-branch-title unified-tree-node" @click="togglePlatform(platform.code)">
             <span v-if="platformHasChildren(platform.code)" class="tree-toggle" :class="{ expanded: isPlatformExpanded(platform.code) }">›</span>
             <span>{{ platform.name }}</span>
           </button>
           <template v-if="isPlatformExpanded(platform.code)">
             <template v-for="module in rootModulesForPlatform(platform.code)" :key="module.id">
-              <button class="module-title tree-branch-title" @click="toggleModule(module.id)">
+              <button class="module-title tree-branch-title unified-tree-node" @click="toggleModule(module.id)">
                 <span v-if="moduleHasChildren(platform.code, module.id)" class="tree-toggle" :class="{ expanded: isModuleExpanded(module.id) }">›</span>
                 <span>{{ module.name }}</span>
               </button>
@@ -27,7 +27,7 @@
                 <button
                   v-for="api in apisByModule(platform.code, module.id)"
                   :key="api.id"
-                  class="api-node-v2"
+                  class="api-node-v2 unified-tree-node"
                   :class="{ active: selectedApi?.id === api.id }"
                   @click="selectApi(api)"
                 >
@@ -38,7 +38,7 @@
             <button
               v-for="api in apisWithoutModule(platform.code)"
               :key="api.id"
-              class="api-node-v2"
+              class="api-node-v2 unified-tree-node"
               :class="{ active: selectedApi?.id === api.id }"
               @click="selectApi(api)"
             >
@@ -62,8 +62,8 @@
         </div>
         <div class="api-head-actions">
           <el-button @click="goCasePage">测试用例</el-button>
-          <el-button @click="openApiForm(selectedApi)">编辑接口</el-button>
-          <el-button type="primary" :loading="sending" @click="sendDebug">发送</el-button>
+          <el-button type="primary" :loading="savingApi" @click="saveCurrentApi">保存</el-button>
+          <el-button :loading="sending" @click="sendDebug">发送</el-button>
         </div>
       </header>
 
@@ -166,12 +166,11 @@
           <section class="v2-card design-form-card">
             <el-form label-width="96px" :model="designForm">
               <el-form-item label="接口名称"><el-input v-model="designForm.name" /></el-form-item>
-              <el-form-item label="请求路径"><el-input v-model="designForm.path" /></el-form-item>
+              <el-form-item label="请求路径"><el-input v-model="debugForm.path" /></el-form-item>
               <el-form-item label="状态">
                 <el-select v-model="designForm.status"><el-option label="开发中" value="developing" /><el-option label="已发布" value="released" /><el-option label="已废弃" value="deprecated" /></el-select>
               </el-form-item>
               <el-form-item label="描述"><el-input v-model="designForm.description" type="textarea" :rows="4" /></el-form-item>
-              <el-form-item><el-button type="primary" :loading="savingApi" @click="saveDesign">保存设计</el-button></el-form-item>
             </el-form>
           </section>
         </el-tab-pane>
@@ -241,7 +240,7 @@
 
     <section v-else class="api-v2-empty"><el-empty description="请选择左侧接口，或新增接口开始维护" /></section>
 
-    <el-drawer v-model="apiDrawer" :title="editingApiId ? '编辑接口' : '新增接口'" size="560px">
+    <el-drawer v-model="apiDrawer" title="新增接口" size="560px">
       <el-form label-width="92px" :model="apiForm">
         <el-form-item label="接口名称" required><el-input v-model="apiForm.name" /></el-form-item>
         <el-form-item label="平台" required>
@@ -313,7 +312,8 @@ interface RowItem { enabled: boolean; key: string; value: string; description?: 
 interface AssertionRow { uid: number; type: string; key: string; operator: string; expected: string }
 interface ApiDefinition {
   id: number; name: string; platform: string; module?: number; method: string; path: string; status: string; description?: string;
-  headers?: RowItem[]; query_params?: RowItem[]; body?: unknown; body_type?: string; assertions?: unknown[]; test_case_count?: number; mock_count?: number;
+  headers?: RowItem[]; query_params?: RowItem[]; body?: unknown; body_type?: string; assertions?: unknown[]; auth_config?: Record<string, unknown>;
+  body_schema?: unknown; response_example?: unknown; tags?: unknown[]; sort_order?: number; is_active?: boolean; test_case_count?: number; mock_count?: number;
 }
 interface ApiTestCase { id: number; api: number; name: string; method: string; status: string; priority: string; description?: string }
 interface ApiMockRule { id: number; api: number; name: string; enabled: boolean; status_code: number; delay_ms: number; response_body: unknown }
@@ -367,7 +367,6 @@ const caseDialog = ref(false);
 const mockDialog = ref(false);
 const curlDialog = ref(false);
 const curlText = ref("");
-const editingApiId = ref<number>();
 const editingCaseId = ref<number>();
 const editingMockId = ref<number>();
 const apis = ref<ApiDefinition[]>([]);
@@ -481,11 +480,11 @@ const caseStatusClass = (status: string) => (status === "active" ? "badge-succes
 const load = async () => {
   loading.value = true;
   try {
-    const [apiResp, platformResp, moduleResp, envResp] = await Promise.all([platformApi.apiDefinitions(), platformApi.platforms(), platformApi.apiModules(), platformApi.environments()]);
+    const [apiResp, platformData, moduleData, envData] = await Promise.all([platformApi.apiDefinitions(), platformApi.cachedPlatforms(), platformApi.cachedApiModules(), platformApi.cachedEnvironments()]);
     apis.value = unwrapList<ApiDefinition>(apiResp.data);
-    platforms.value = unwrapList(platformResp.data);
-    modules.value = unwrapList(moduleResp.data);
-    environments.value = unwrapList(envResp.data);
+    platforms.value = unwrapList(platformData as any);
+    modules.value = unwrapList(moduleData as any);
+    environments.value = unwrapList(envData as any);
     expandedPlatforms.value = platformOptions.value.filter((item) => platformHasChildren(item.code)).map((item) => item.code);
     expandedModules.value = modules.value.filter((item) => moduleHasChildren(modulePlatformCode(item), item.id)).map((item) => item.id);
     debugForm.environment = environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id;
@@ -525,6 +524,8 @@ const selectApi = async (api: ApiDefinition) => {
   headerRows.value = api.headers?.length ? api.headers : [{ enabled: true, key: "Content-Type", value: "application/json", description: "" }];
   bodyText.value = JSON.stringify(api.body || {}, null, 2);
   assertionRows.value = (api.assertions?.length ? api.assertions : [{ type: "status_code", operator: "eq", expected: 200 }]).map(createAssertion);
+  authType.value = String(api.auth_config?.type || "none");
+  authToken.value = String(api.auth_config?.token || "");
   Object.assign(designForm, { name: api.name, path: api.path, status: api.status, description: api.description || "" });
   await router.replace({ path: "/api-testing/apis", query: { apiId: api.id } });
   await Promise.all([loadCases(), loadMocks()]);
@@ -533,22 +534,21 @@ const goCasePage = () => {
   if (!selectedApi.value) return;
   router.push({ path: "/api-testing/cases", query: { apiId: selectedApi.value.id } });
 };
-const openApiForm = (api?: ApiDefinition) => {
-  editingApiId.value = api?.id;
+const openApiForm = () => {
   Object.assign(apiForm, {
-    name: api?.name || "",
-    platform: api?.platform || platformOptions.value[0]?.code || "ERP",
-    module: api?.module,
-    method: api?.method || "GET",
-    path: api?.path || "",
-    status: api?.status || "developing",
-    description: api?.description || "",
+    name: "",
+    platform: platformOptions.value[0]?.code || "ERP",
+    module: undefined,
+    method: "GET",
+    path: "",
+    status: "developing",
+    description: "",
   });
   Object.assign(apiRequestForm, {
-    headers: api?.headers || [],
-    query_params: api?.query_params || [],
-    body: api?.body || {},
-    body_type: api?.body_type || "none",
+    headers: [],
+    query_params: [],
+    body: {},
+    body_type: "none",
   });
   apiDrawer.value = true;
 };
@@ -597,7 +597,6 @@ const saveApi = async () => {
     });
     const duplicated = unwrapList<ApiDefinition>(existingResp).find(
       (item) =>
-        item.id !== editingApiId.value &&
         item.platform === apiForm.platform &&
         item.method === apiForm.method &&
         normalizePath(item.path) === nextPath,
@@ -607,7 +606,7 @@ const saveApi = async () => {
       return;
     }
     const payload = { ...apiForm, path: nextPath, ...apiRequestForm, is_active: true };
-    const { data } = editingApiId.value ? await platformApi.updateApiDefinition(editingApiId.value, payload) : await platformApi.createApiDefinition(payload);
+    const { data } = await platformApi.createApiDefinition(payload);
     ElMessage.success("接口已保存");
     apiDrawer.value = false;
     await load();
@@ -616,20 +615,47 @@ const saveApi = async () => {
     savingApi.value = false;
   }
 };
-const saveDesign = async () => {
+// 当前接口保存以主页面的设计区和调试区为准，避免弹窗状态与页面状态割裂。
+const buildCurrentApiPayload = () => {
+  if (!selectedApi.value) return undefined;
+  const nextPath = normalizePath(debugForm.path || designForm.path);
+  return {
+    name: designForm.name.trim(),
+    platform: selectedApi.value.platform,
+    module: selectedApi.value.module,
+    method: debugForm.method,
+    path: nextPath,
+    status: designForm.status,
+    description: designForm.description,
+    tags: selectedApi.value.tags || [],
+    headers: headerRows.value,
+    query_params: paramsRows.value,
+    body_type: (bodyText.value.trim() && bodyText.value.trim() !== "{}") ? "json" : "none",
+    body: parseJson(bodyText.value, {}),
+    body_schema: selectedApi.value.body_schema || {},
+    auth_config: { type: authType.value, token: authToken.value },
+    assertions: buildAssertions(),
+    response_example: selectedApi.value.response_example || {},
+    sort_order: selectedApi.value.sort_order || 0,
+    is_active: selectedApi.value.is_active !== false,
+  };
+};
+const saveCurrentApi = async () => {
   if (!selectedApi.value) return;
+  const payload = buildCurrentApiPayload();
+  if (!payload) return;
+  if (!payload.name || !payload.path) {
+    ElMessage.warning("接口名称和请求路径必填");
+    return;
+  }
   savingApi.value = true;
   try {
-    const { data } = await platformApi.updateApiDefinition(selectedApi.value.id, {
-      name: designForm.name,
-      path: designForm.path,
-      status: designForm.status,
-      description: designForm.description,
-    });
-    ElMessage.success("接口设计已保存");
+    const { data } = await platformApi.updateApiDefinition(selectedApi.value.id, payload);
+    ElMessage.success("接口已保存");
     selectedApi.value = data;
     const index = apis.value.findIndex((item) => item.id === data.id);
     if (index >= 0) apis.value[index] = data;
+    await selectApi(data);
   } finally {
     savingApi.value = false;
   }

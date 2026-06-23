@@ -8,7 +8,7 @@
       </div>
       <div class="debug-actions">
         <span class="environment-pill">环境：{{ environmentName }}</span>
-        <el-button :loading="running" type="primary" @click="$emit('run')">运行</el-button>
+        <el-button v-if="showRun" :loading="running" type="primary" @click="$emit('run')">运行</el-button>
         <el-button @click="$emit('close')">关闭</el-button>
       </div>
     </header>
@@ -68,6 +68,7 @@ const props = defineProps<{
   result?: Record<string, any> | null;
   environmentName?: string;
   running?: boolean;
+  showRun?: boolean;
 }>();
 
 defineEmits<{
@@ -87,7 +88,13 @@ const responseHeaders = computed(() => props.result?.response?.headers);
 const assertionRows = computed(() => props.result?.assertions || []);
 const logRows = computed(() => props.result?.logs || []);
 
-const normalizeRows = (rows: any) => Array.isArray(rows) ? rows : [];
+const normalizeRows = (rows: any) => {
+  if (Array.isArray(rows)) return rows;
+  if (rows && typeof rows === "object") {
+    return Object.entries(rows).map(([key, value]) => ({ key, value, enabled: true, description: "" }));
+  }
+  return [];
+};
 const prettyJson = (value: unknown, emptyText: string) => {
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) return emptyText;
   if (typeof value === "object" && !Array.isArray(value) && !Object.keys(value as Record<string, unknown>).length) return emptyText;
@@ -126,7 +133,7 @@ const AssertionPreview = defineComponent({
       if (!rows.length) return h("div", { class: "empty-lite" }, "暂无断言");
       return h("div", { class: "assertion-preview" }, rows.map((row: any, index: number) =>
         h("div", { class: "assertion-row", key: index }, [
-          h("b", row.name || row.type || "鏂█"),
+          h("b", row.name || row.type || "断言"),
           h("span", `${row.key || row.path || ""} ${row.operator || ""} ${row.expected ?? ""}`.trim()),
         ]),
       ));
@@ -143,7 +150,7 @@ const AssertionResultPreview = defineComponent({
       return h("div", { class: "assertion-preview" }, rows.map((row: any, index: number) =>
         h("div", { class: ["assertion-row", row.passed ? "passed" : "failed"], key: index }, [
           h("b", row.passed ? "PASS" : "FAIL"),
-          h("span", row.name || row.type || "鏂█"),
+          h("span", row.name || row.type || "断言"),
           h("em", `expected ${row.expected ?? "-"}, actual ${row.actual ?? "-"}`),
         ]),
       ));
@@ -172,7 +179,6 @@ const LogPreview = defineComponent({
 .debug-panels { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .debug-panel { min-height: 0; border: 1px solid var(--el-border-color-light); border-radius: 8px; padding: 12px; overflow: auto; }
 .panel-title { margin-bottom: 10px; }
-.method-mini { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; height: 20px; border-radius: 4px; font-size: 12px; background: #e8f3ff; color: #1f6feb; }
 .kv-preview { display: grid; gap: 8px; }
 .kv-preview-row { display: grid; grid-template-columns: minmax(120px, 180px) minmax(160px, 1fr) minmax(100px, 180px); gap: 8px; align-items: center; min-height: 32px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .kv-preview-row span { font-weight: 600; }

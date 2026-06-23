@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.utils import timezone
 
 from apps.accounts.models import AuditLog, LoginAttempt, Permission, Role, UserProfile, UserSession
@@ -238,7 +239,8 @@ def record_failed_login(username: str) -> None:
 
 
 def create_user_session(request, user, token, remember_me: bool = False) -> UserSession:
-    expires_at = timezone.now() + (timedelta(days=30) if remember_me else timedelta(hours=2))
+    session_seconds = _session_seconds(remember_me)
+    expires_at = timezone.now() + timedelta(seconds=session_seconds)
     return UserSession.objects.create(
         user=user,
         token_key=token.key,
@@ -248,6 +250,16 @@ def create_user_session(request, user, token, remember_me: bool = False) -> User
         last_active_at=timezone.now(),
         expires_at=expires_at,
     )
+
+
+def _session_seconds(remember_me: bool) -> int:
+    setting_name = "REMEMBER_ME_USER_SESSION_SECONDS" if remember_me else "USER_SESSION_SECONDS"
+    default = 30 * 24 * 60 * 60 if remember_me else 24 * 60 * 60
+    try:
+        value = int(getattr(settings, setting_name, default))
+    except (TypeError, ValueError):
+        value = default
+    return max(60, value)
 
 
 def revoke_user_sessions(user) -> int:

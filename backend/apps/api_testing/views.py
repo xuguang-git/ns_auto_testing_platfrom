@@ -14,17 +14,24 @@ from apps.api_testing.serializers import (
     ApiTestCaseSerializer,
 )
 from apps.api_testing.services import execute_debug_request
+from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.services import get_default_project
 
 
-class ApiModuleViewSet(OperatorAuditModelViewSet):
+class ApiModuleViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiModule.objects.select_related("project", "managed_platform", "parent").prefetch_related("apis").all()
     serializer_class = ApiModuleSerializer
     permission_classes = [action_permission("module.read", "module.write", "module.delete")]
     filterset_fields = ["project", "managed_platform", "platform", "parent", "is_active"]
     search_fields = ["name", "code", "description"]
     audit_module = "api_module"
+    delete_object_label = "接口目录"
+    delete_guard_rules = (
+        DeleteGuardRule("children", "子目录"),
+        DeleteGuardRule("apis", "接口"),
+        DeleteGuardRule("pre_request_operations", "全局前置操作"),
+    )
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
@@ -32,7 +39,7 @@ class ApiModuleViewSet(OperatorAuditModelViewSet):
         self.write_operator_audit(AuditLog.ActionType.CREATE, instance)
 
 
-class ApiDefinitionViewSet(OperatorAuditModelViewSet):
+class ApiDefinitionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiDefinition.objects.select_related("project", "module").prefetch_related("test_cases", "mock_rules").all()
     serializer_class = ApiDefinitionSerializer
     permission_classes = [action_permission("api.read", "api.write", "api.delete")]
@@ -41,6 +48,12 @@ class ApiDefinitionViewSet(OperatorAuditModelViewSet):
     search_fields = ["name", "path", "description"]
     ordering_fields = ["sort_order", "created_at", "updated_at"]
     audit_module = "api_definition"
+    delete_object_label = "接口"
+    delete_guard_rules = (
+        DeleteGuardRule("test_cases", "单接口用例"),
+        DeleteGuardRule("mock_rules", "Mock规则"),
+        DeleteGuardRule("steps", "场景步骤"),
+    )
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
@@ -65,7 +78,14 @@ class ApiDefinitionViewSet(OperatorAuditModelViewSet):
         return response.Response(result, status=status.HTTP_200_OK)
 
 
-class ApiTestCaseViewSet(OperatorAuditModelViewSet):
+def count_suites_using_case(case: ApiTestCase) -> int:
+    """统计当前单接口用例被多少个测试套件引用。"""
+
+    suites = ApiSuite.objects.filter(project_id=case.project_id).only("case_ids")
+    return sum(1 for suite in suites if case.id in (suite.case_ids or []))
+
+
+class ApiTestCaseViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiTestCase.objects.select_related("project", "api", "api__module").all()
     serializer_class = ApiTestCaseSerializer
     permission_classes = [action_permission("api.read", "api.write", "api.delete")]
@@ -73,6 +93,10 @@ class ApiTestCaseViewSet(OperatorAuditModelViewSet):
     search_fields = ["name", "description", "api__name", "api__path"]
     ordering_fields = ["created_at", "updated_at", "priority"]
     audit_module = "api_test_case"
+    delete_object_label = "单接口用例"
+    delete_guard_rules = (
+        DeleteGuardRule(None, "测试套件", "当前测试用例已被测试套件引用，不允许删除，请先从套件中移除。", count_suites_using_case),
+    )
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -101,13 +125,20 @@ class ApiMockRuleViewSet(OperatorAuditModelViewSet):
     audit_module = "api_mock_rule"
 
 
-class ApiSuiteViewSet(OperatorAuditModelViewSet):
+class ApiSuiteViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiSuite.objects.select_related("project").all()
     serializer_class = ApiSuiteSerializer
     permission_classes = [action_permission("api.read", "api.write", "api.delete")]
     filterset_fields = ["project", "is_active"]
     search_fields = ["name", "description"]
     audit_module = "api_suite"
+    delete_object_label = "测试套件"
+    delete_guard_rules = (
+        DeleteGuardRule("scenarios", "场景用例"),
+        DeleteGuardRule("cases", "旧版单接口用例"),
+        DeleteGuardRule("schedules", "定时任务"),
+        DeleteGuardRule("runs", "测试报告"),
+    )
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
@@ -119,13 +150,17 @@ class ApiSuiteViewSet(OperatorAuditModelViewSet):
         self.write_operator_audit(AuditLog.ActionType.CREATE, instance)
 
 
-class ApiScenarioViewSet(OperatorAuditModelViewSet):
+class ApiScenarioViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiScenario.objects.select_related("suite", "suite__project").all()
     serializer_class = ApiScenarioSerializer
     permission_classes = [action_permission("api.read", "api.write", "api.delete")]
     filterset_fields = ["suite", "priority", "is_active"]
     search_fields = ["name", "description"]
     audit_module = "api_scenario"
+    delete_object_label = "场景用例"
+    delete_guard_rules = (
+        DeleteGuardRule("steps", "场景步骤"),
+    )
 
 
 class ApiStepViewSet(OperatorAuditModelViewSet):

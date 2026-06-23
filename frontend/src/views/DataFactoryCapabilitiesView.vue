@@ -215,10 +215,10 @@ const extractorNames = (row: DataCapability) => (row.extractors || []).map((item
 const load = async () => {
   loading.value = true;
   try {
-    const [capResp, platformResp, envResp] = await Promise.all([platformApi.dataFactoryCapabilities(), platformApi.platforms(), platformApi.environments()]);
+    const [capResp, platformData, envData] = await Promise.all([platformApi.dataFactoryCapabilities(), platformApi.cachedPlatforms(), platformApi.cachedEnvironments()]);
     capabilities.value = unwrapList<DataCapability>(capResp.data);
-    platformRows.value = unwrapList(platformResp.data);
-    environments.value = unwrapList(envResp.data);
+    platformRows.value = unwrapList(platformData as any);
+    environments.value = unwrapList(envData as any);
   } finally {
     loading.value = false;
   }

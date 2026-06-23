@@ -24,6 +24,13 @@ def unified_exception_handler(exc, context):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+    if hasattr(exc, "payload"):
+        response.data = exc.payload
+        return response
+
+    if _is_business_envelope(response.data):
+        return response
+
     message = _extract_message(response.data) or _fallback_message(exc, response.status_code)
     response.data = {
         "code": _business_code(exc, response.status_code),
@@ -32,6 +39,10 @@ def unified_exception_handler(exc, context):
         "errors": _normalize_errors(response.data),
     }
     return response
+
+
+def _is_business_envelope(data: Any) -> bool:
+    return isinstance(data, dict) and {"code", "message", "data"}.issubset(data.keys())
 
 
 def _business_code(exc, status_code: int) -> int:

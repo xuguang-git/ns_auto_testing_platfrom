@@ -1,7 +1,7 @@
 ﻿<template>
   <div class="single-case-workbench">
-    <aside class="single-case-tree">
-      <div class="tree-head">
+    <aside class="single-case-tree unified-tree-panel">
+      <div class="tree-head unified-tree-head">
         <div>
           <strong>接口目录</strong>
           <span>{{ totalCaseCount }} 个用例</span>
@@ -9,9 +9,9 @@
         <el-button size="small" @click="load">刷新</el-button>
       </div>
       <el-input v-model="keyword" placeholder="搜索目录/接口" clearable />
-      <div class="tree-body">
+      <div class="tree-body unified-tree-body">
         <section v-for="platform in platformOptions" :key="platform.code">
-          <button class="tree-row platform" @click="togglePlatform(platform.code)">
+          <button class="tree-row platform unified-tree-node" @click="togglePlatform(platform.code)">
             <span class="twisty" :class="{ expanded: expandedPlatforms.includes(platform.code) }">›</span>
             <span class="tree-name">{{ platform.name }}</span>
             <em>{{ platformCaseCount(platform.code) }}</em>
@@ -20,7 +20,7 @@
             <button
               v-for="node in visibleNodes(platform.code)"
               :key="node.key"
-              class="tree-row"
+              class="tree-row unified-tree-node"
               :class="{ api: node.type === 'api', active: node.type === 'api' && selectedApiId === node.id }"
               :style="{ paddingLeft: `${18 + node.level * 18}px` }"
               @click="node.type === 'module' ? toggleModule(Number(node.id)) : selectApi(Number(node.id))"
@@ -385,14 +385,13 @@ onMounted(load);
 .tree-head strong, .single-case-head h2, .debug-head h3 { margin: 0; }
 .tree-head span, .single-case-head p, .muted { color: var(--el-text-color-secondary); font-size: 13px; }
 .tree-body { overflow: auto; min-height: 0; }
-.tree-row { width: 100%; min-height: 34px; display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--el-text-color-primary); cursor: pointer; border-radius: 6px; padding: 0 8px; text-align: left; }
-.tree-row:hover, .tree-row.active { background: var(--el-fill-color-light); }
-.tree-row.api.active { color: var(--el-color-primary); font-weight: 600; }
+.tree-row { width: 100%; min-height: 36px; display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--el-text-color-primary); cursor: pointer; border-radius: 8px; padding: 0 8px; text-align: left; }
+.tree-row:hover, .tree-row.active { background: var(--brand-lighter, var(--el-fill-color-light)); color: var(--brand, var(--el-color-primary)); }
+.tree-row.api.active { color: var(--brand, var(--el-color-primary)); font-weight: 600; }
 .tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-row em { min-width: 28px; text-align: right; color: var(--el-text-color-secondary); font-style: normal; font-size: 12px; }
 .twisty { width: 14px; display: inline-flex; justify-content: center; transition: transform .16s ease; }
 .twisty.expanded { transform: rotate(90deg); }
-.method-mini { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; height: 20px; border-radius: 4px; font-size: 12px; background: #e8f3ff; color: #1f6feb; }
 .single-case-main { display: flex; flex-direction: column; padding: 16px; gap: 14px; }
 .case-table { min-height: 0; flex: 1; }
 .case-name-link { padding: 0; }

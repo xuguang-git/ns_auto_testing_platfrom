@@ -1,1 +1,1 @@
-# Shared abstract models do not need admin registration.
+# 共享抽象模型不需要注册到后台管理。

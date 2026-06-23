@@ -1,6 +1,7 @@
 import base64
 import ipaddress
 import json
+import logging
 import re
 import socket
 import time
@@ -15,7 +16,9 @@ from apps.projects.db_services import execute_test_data_source
 from apps.projects.models import Environment, TestDataSource
 
 
+logger = logging.getLogger(__name__)
 VAR_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_.-]+)\s*}}")
+EXACT_VAR_PATTERN = re.compile(r"^{{\s*([a-zA-Z0-9_.-]+)\s*}}$")
 ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 REQUEST_CONTROL_CACHE_SECONDS = 60
 _REQUEST_CONTROL_METHOD_CACHE: dict[int, tuple[float, frozenset[str] | None]] = {}
@@ -46,6 +49,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
         data_logs.extend(pre_logs)
         extracted_variables.update(pre_variables)
     except requests.RequestException as exc:
+        error_fields = _request_error_fields(exc)
         return {
             "ok": False,
             "passed": False,
@@ -53,8 +57,8 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "response": {"elapsed_ms": 0},
             "assertions": [],
             "variables": extracted_variables,
-            "logs": [*data_logs, str(exc)],
-            "error": str(exc),
+            "logs": [*data_logs, *_request_error_logs(exc)],
+            **error_fields,
         }
     method = (payload.get("method") or "GET").upper()
     if environment and not _is_method_allowed_by_environment(environment, method):
@@ -139,6 +143,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
         }
     except requests.RequestException as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
+        error_fields = _request_error_fields(exc)
         return {
             "ok": False,
             "passed": False,
@@ -146,9 +151,44 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "response": {"elapsed_ms": elapsed_ms},
             "assertions": [],
             "variables": extracted_variables,
-            "logs": [*data_logs, *session_logs, str(exc)],
-            "error": str(exc),
+            "logs": [*data_logs, *session_logs, *_request_error_logs(exc)],
+            **error_fields,
         }
+
+
+def _request_error_fields(exc: requests.RequestException) -> dict[str, Any]:
+    message, error_type = _request_error_message(exc)
+    detail = str(exc).strip()
+    fields: dict[str, Any] = {"error": message, "error_type": error_type}
+    if settings.DEBUG and detail and detail != message:
+        fields["error_detail"] = detail
+    if error_type != "request_error":
+        logger.warning("API debug outbound request failed: %s", detail or message, exc_info=exc)
+    return fields
+
+
+def _request_error_logs(exc: requests.RequestException) -> list[str]:
+    message, _ = _request_error_message(exc)
+    detail = str(exc).strip()
+    if settings.DEBUG and detail and detail != message:
+        return [message, f"调试信息：{detail}"]
+    return [message]
+
+
+def _request_error_message(exc: requests.RequestException) -> tuple[str, str]:
+    if isinstance(exc, requests.exceptions.SSLError):
+        return "目标服务 HTTPS 握手失败，请检查目标服务证书、TLS 配置、网络白名单或稍后重试。", "ssl_error"
+    if isinstance(exc, requests.exceptions.ConnectTimeout):
+        return "连接目标服务超时，请检查目标地址、网络连通性或稍后重试。", "connect_timeout"
+    if isinstance(exc, requests.exceptions.ReadTimeout):
+        return "目标服务响应超时，请检查接口耗时、超时时间配置或稍后重试。", "read_timeout"
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "请求目标服务超时，请稍后重试。", "timeout"
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return "无法连接目标服务，请检查目标地址、网络、DNS、证书或访问白名单。", "connection_error"
+    if isinstance(exc, requests.exceptions.TooManyRedirects):
+        return "目标服务重定向次数过多，请检查接口地址或重定向配置。", "too_many_redirects"
+    return str(exc).strip() or "请求执行失败，请检查目标服务配置。", "request_error"
 
 
 def _apply_test_data_sources(source_ids: list[Any], variables: dict[str, Any], phase: str) -> tuple[list[str], dict[str, Any]]:
@@ -493,6 +533,10 @@ def _match_success_rule(rule: dict[str, Any], resp, response_body: Any, elapsed_
 
 def _render_value(value, variables: dict[str, Any]):
     if isinstance(value, str):
+        # 单独占位的变量保留原始类型，避免数字、布尔值在请求体中被转成字符串。
+        exact_match = EXACT_VAR_PATTERN.match(value)
+        if exact_match and exact_match.group(1) in variables:
+            return variables[exact_match.group(1)]
         return VAR_PATTERN.sub(lambda match: str(variables.get(match.group(1), match.group(0))), value)
     if isinstance(value, list):
         return [_render_value(item, variables) for item in value]
