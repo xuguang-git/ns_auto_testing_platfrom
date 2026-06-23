@@ -3,7 +3,7 @@
     <div class="v11-topbar">
       <div>
         <h2>平台维护</h2>
-        <span>管理测试平台列表，支持级联删除确认</span>
+        <span>管理测试平台列表，删除前会校验关联数据</span>
       </div>
       <el-button type="primary" @click="openCreate">+ 新增平台</el-button>
     </div>
@@ -56,18 +56,17 @@
 
     <el-dialog v-model="deleteVisible" title="确认删除平台" width="560px">
       <div v-if="deleteTarget" class="cascade-box">
-        <p>即将删除 <b>{{ deleteTarget.name }}</b>，此操作不可撤销。</p>
+        <p>确认删除 <b>{{ deleteTarget.name }}</b>？此操作不可恢复。</p>
         <div class="cascade-tree">
           <div>{{ deleteTarget.name }} 平台</div>
           <div>↳ 关联模块：{{ deleteTarget.module_count || 0 }} 个</div>
           <div>↳ 模块下接口：{{ deleteTarget.api_count || 0 }} 个</div>
         </div>
-        <p class="cascade-note">历史执行记录和测试报告将保留。</p>
-        <el-input v-model="deleteConfirm" :placeholder="`输入 ${deleteTarget.code} 确认删除`" />
+        <p class="cascade-note">如存在关联模块，后端会自动拦截删除。</p>
       </div>
       <template #footer>
         <el-button @click="deleteVisible = false">取消</el-button>
-        <el-button type="danger" :disabled="deleteConfirm !== deleteTarget?.code" @click="deletePlatform">确认删除</el-button>
+        <el-button type="danger" @click="deletePlatform">确认删除</el-button>
       </template>
     </el-dialog>
   </div>
@@ -86,7 +85,6 @@ const deleteVisible = ref(false);
 const editingId = ref<number>();
 const platforms = ref<any[]>([]);
 const deleteTarget = ref<any>();
-const deleteConfirm = ref("");
 const form = reactive({ name: "", code: "", description: "", sort_order: 0, is_active: true });
 
 const load = async () => {
@@ -136,7 +134,6 @@ const savePlatform = async () => {
 
 const openDelete = (row: any) => {
   deleteTarget.value = row;
-  deleteConfirm.value = "";
   deleteVisible.value = true;
 };
 

@@ -98,13 +98,13 @@
 
     <el-dialog v-model="deleteVisible" title="确认删除模块" width="520px">
       <div v-if="deleteTarget" class="cascade-box">
-        <p>删除 <b>{{ deleteTarget.name }}</b> 将级联删除模块下接口。</p>
+        <p>确认删除 <b>{{ deleteTarget.name }}</b>？此操作不可恢复。</p>
         <div class="cascade-tree">↳ 关联接口：{{ deleteTarget.api_count || 0 }} 个</div>
-        <el-input v-model="deleteConfirm" :placeholder="`输入 ${deleteTarget.code || deleteTarget.name} 确认删除`" />
+        <p class="cascade-note">如存在子目录、接口或全局前置操作，后端会自动拦截删除。</p>
       </div>
       <template #footer>
         <el-button @click="deleteVisible = false">取消</el-button>
-        <el-button type="danger" :disabled="deleteConfirm !== (deleteTarget?.code || deleteTarget?.name)" @click="deleteModule">确认删除</el-button>
+        <el-button type="danger" @click="deleteModule">确认删除</el-button>
       </template>
     </el-dialog>
   </div>
@@ -128,7 +128,6 @@ const expandedPlatforms = ref<number[]>([]);
 const expandedModules = ref<number[]>([]);
 const editingId = ref<number>();
 const deleteTarget = ref<any>();
-const deleteConfirm = ref("");
 const form = reactive({ managed_platform: undefined as number | undefined, platform: "ERP", name: "", code: "", description: "", sort_order: 0, is_active: true });
 
 const filteredModules = computed(() => modules.value.filter((item) => (!selectedPlatform.value || item.managed_platform === selectedPlatform.value) && (!selectedModule.value || item.id === selectedModule.value)));
@@ -163,9 +162,9 @@ const syncLegacyPlatform = () => {
 const load = async () => {
   loading.value = true;
   try {
-    const [platformResp, moduleResp] = await Promise.all([platformApi.platforms(), platformApi.apiModules()]);
-    platforms.value = unwrapList(platformResp.data);
-    modules.value = unwrapList(moduleResp.data);
+    const [platformData, moduleData] = await Promise.all([platformApi.cachedPlatforms(), platformApi.cachedApiModules()]);
+    platforms.value = unwrapList(platformData as any);
+    modules.value = unwrapList(moduleData as any);
     expandedPlatforms.value = platforms.value.filter(platformHasChildren).map((item) => item.id);
     expandedModules.value = modules.value.filter((item) => moduleHasChildren(item.id)).map((item) => item.id);
   } finally {
@@ -216,7 +215,6 @@ const saveModule = async () => {
 };
 const openDelete = (row: any) => {
   deleteTarget.value = row;
-  deleteConfirm.value = "";
   deleteVisible.value = true;
 };
 const deleteModule = async () => {

@@ -43,8 +43,8 @@ from apps.projects.views import (
     ProjectViewSet,
     TestDataSourceViewSet,
 )
-from apps.scheduling.views import ScheduledPlanViewSet
-from apps.test_runs.views import TestPlanViewSet, TestRunViewSet
+from apps.scheduling.views import NotificationChannelViewSet, NotificationSendLogViewSet, NotificationTemplateViewSet, ScheduledPlanViewSet
+from apps.test_runs.views import TestRunViewSet
 from apps.ui_testing.views import UiActionViewSet, UiCaseViewSet, UiElementViewSet, UiPageViewSet, UiSuiteViewSet
 
 
@@ -77,9 +77,11 @@ router.register("ui-cases", UiCaseViewSet)
 router.register("ui-elements", UiElementViewSet)
 router.register("ui-pages", UiPageViewSet)
 router.register("ui-actions", UiActionViewSet)
-router.register("test-plans", TestPlanViewSet)
 router.register("test-runs", TestRunViewSet)
 router.register("scheduled-plans", ScheduledPlanViewSet)
+router.register("notification-channels", NotificationChannelViewSet)
+router.register("notification-templates", NotificationTemplateViewSet)
+router.register("notification-send-logs", NotificationSendLogViewSet)
 router.register("performance/executor", ExecutorCheckViewSet, basename="performance-executor")
 router.register("performance/scripts", JMeterScriptViewSet)
 router.register("performance/tasks", PerformanceTaskViewSet)

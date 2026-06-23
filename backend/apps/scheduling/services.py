@@ -8,14 +8,15 @@ from kombu.exceptions import OperationalError
 
 from apps.scheduling.models import ScheduledPlan
 from apps.test_runs.models import TestRun
-from apps.test_runs.tasks import run_test_plan
+from apps.test_runs.tasks import run_api_suite
 
 
 MAX_LOOKAHEAD_MINUTES = 366 * 24 * 60
 
 
 def compute_next_run_at(cron: str, base=None):
-    base = base or timezone.now()
+    """按项目本地时区计算下一次运行时间，避免把页面选择的北京时间当成UTC。"""
+    base = timezone.localtime(base or timezone.now())
     current = base.replace(second=0, microsecond=0) + timedelta(minutes=1)
     for _ in range(MAX_LOOKAHEAD_MINUTES):
         if _cron_matches(cron, current):
@@ -24,17 +25,19 @@ def compute_next_run_at(cron: str, base=None):
     raise ValueError("Cron 表达式在未来一年内没有匹配时间")
 
 
-def trigger_scheduled_plan(schedule: ScheduledPlan) -> TestRun:
+def trigger_scheduled_plan(schedule: ScheduledPlan, trigger_type: str = TestRun.TriggerType.SCHEDULE) -> TestRun:
+    """触发一个调度计划，创建测试报告并投递异步执行任务。"""
     with transaction.atomic():
         schedule = (
             ScheduledPlan.objects.select_for_update()
-            .select_related("environment", "plan", "plan__environment")
+            .select_related("environment", "suite")
             .get(pk=schedule.pk)
         )
         test_run = TestRun.objects.create(
-            plan=schedule.plan,
-            environment=schedule.environment or schedule.plan.environment,
-            trigger_type=TestRun.TriggerType.SCHEDULE,
+            suite=schedule.suite,
+            environment=schedule.environment,
+            schedule=schedule,
+            trigger_type=trigger_type,
         )
         schedule.last_run_at = timezone.now()
         schedule.last_run_id = test_run.id
@@ -44,7 +47,7 @@ def trigger_scheduled_plan(schedule: ScheduledPlan) -> TestRun:
         schedule.save(update_fields=["last_run_at", "last_run_id", "last_status", "run_count", "next_run_at", "updated_at"])
 
     try:
-        async_result = run_test_plan.delay(test_run.id)
+        async_result = run_api_suite.delay(test_run.id)
         test_run.celery_task_id = async_result.id
         test_run.save(update_fields=["celery_task_id", "updated_at"])
     except OperationalError as exc:
@@ -61,15 +64,16 @@ def trigger_scheduled_plan(schedule: ScheduledPlan) -> TestRun:
 
 
 def dispatch_due_schedules(now=None) -> int:
+    """扫描到期且启用的套件定时任务，并逐个触发执行。"""
     now = now or timezone.now()
-    due_schedules = ScheduledPlan.objects.select_related("environment", "plan", "plan__environment").filter(
+    due_schedules = ScheduledPlan.objects.select_related("environment", "suite").filter(
         is_active=True,
-        plan__is_active=True,
+        suite__is_active=True,
         next_run_at__lte=now,
     )
     count = 0
     for schedule in due_schedules:
-        trigger_scheduled_plan(schedule)
+        trigger_scheduled_plan(schedule, trigger_type=TestRun.TriggerType.SCHEDULE)
         count += 1
     return count
 

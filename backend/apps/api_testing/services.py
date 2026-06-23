@@ -18,6 +18,7 @@ from apps.projects.models import Environment, TestDataSource
 
 logger = logging.getLogger(__name__)
 VAR_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_.-]+)\s*}}")
+EXACT_VAR_PATTERN = re.compile(r"^{{\s*([a-zA-Z0-9_.-]+)\s*}}$")
 ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 REQUEST_CONTROL_CACHE_SECONDS = 60
 _REQUEST_CONTROL_METHOD_CACHE: dict[int, tuple[float, frozenset[str] | None]] = {}
@@ -532,6 +533,10 @@ def _match_success_rule(rule: dict[str, Any], resp, response_body: Any, elapsed_
 
 def _render_value(value, variables: dict[str, Any]):
     if isinstance(value, str):
+        # 单独占位的变量保留原始类型，避免数字、布尔值在请求体中被转成字符串。
+        exact_match = EXACT_VAR_PATTERN.match(value)
+        if exact_match and exact_match.group(1) in variables:
+            return variables[exact_match.group(1)]
         return VAR_PATTERN.sub(lambda match: str(variables.get(match.group(1), match.group(0))), value)
     if isinstance(value, list):
         return [_render_value(item, variables) for item in value]

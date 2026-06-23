@@ -8,7 +8,7 @@
       </div>
       <div class="debug-actions">
         <span class="environment-pill">环境：{{ environmentName }}</span>
-        <el-button :loading="running" type="primary" @click="$emit('run')">运行</el-button>
+        <el-button v-if="showRun" :loading="running" type="primary" @click="$emit('run')">运行</el-button>
         <el-button @click="$emit('close')">关闭</el-button>
       </div>
     </header>
@@ -68,6 +68,7 @@ const props = defineProps<{
   result?: Record<string, any> | null;
   environmentName?: string;
   running?: boolean;
+  showRun?: boolean;
 }>();
 
 defineEmits<{
@@ -87,7 +88,13 @@ const responseHeaders = computed(() => props.result?.response?.headers);
 const assertionRows = computed(() => props.result?.assertions || []);
 const logRows = computed(() => props.result?.logs || []);
 
-const normalizeRows = (rows: any) => Array.isArray(rows) ? rows : [];
+const normalizeRows = (rows: any) => {
+  if (Array.isArray(rows)) return rows;
+  if (rows && typeof rows === "object") {
+    return Object.entries(rows).map(([key, value]) => ({ key, value, enabled: true, description: "" }));
+  }
+  return [];
+};
 const prettyJson = (value: unknown, emptyText: string) => {
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) return emptyText;
   if (typeof value === "object" && !Array.isArray(value) && !Object.keys(value as Record<string, unknown>).length) return emptyText;
@@ -126,7 +133,7 @@ const AssertionPreview = defineComponent({
       if (!rows.length) return h("div", { class: "empty-lite" }, "暂无断言");
       return h("div", { class: "assertion-preview" }, rows.map((row: any, index: number) =>
         h("div", { class: "assertion-row", key: index }, [
-          h("b", row.name || row.type || "鏂█"),
+          h("b", row.name || row.type || "断言"),
           h("span", `${row.key || row.path || ""} ${row.operator || ""} ${row.expected ?? ""}`.trim()),
         ]),
       ));
@@ -143,7 +150,7 @@ const AssertionResultPreview = defineComponent({
       return h("div", { class: "assertion-preview" }, rows.map((row: any, index: number) =>
         h("div", { class: ["assertion-row", row.passed ? "passed" : "failed"], key: index }, [
           h("b", row.passed ? "PASS" : "FAIL"),
-          h("span", row.name || row.type || "鏂█"),
+          h("span", row.name || row.type || "断言"),
           h("em", `expected ${row.expected ?? "-"}, actual ${row.actual ?? "-"}`),
         ]),
       ));

@@ -434,14 +434,14 @@ const formatSize = (size?: number) => {
 onMounted(async () => {
   const [apiResp, envResp, platformResp, moduleResp] = await Promise.all([
     platformApi.apiDefinitions(),
-    platformApi.environments(),
-    platformApi.platforms(),
-    platformApi.apiModules(),
+    platformApi.cachedEnvironments(),
+    platformApi.cachedPlatforms(),
+    platformApi.cachedApiModules(),
   ]);
   apis.value = unwrapList<ApiDefinition>(apiResp.data);
-  environments.value = unwrapList<Environment>(envResp.data);
-  platforms.value = unwrapList(platformResp.data);
-  modules.value = unwrapList(moduleResp.data);
+  environments.value = unwrapList<Environment>(envResp as any);
+  platforms.value = unwrapList(platformResp as any);
+  modules.value = unwrapList(moduleResp as any);
   expandedPlatforms.value = platformOptions.value.filter((item) => platformHasChildren(item.code)).map((item) => item.code);
   expandedModules.value = modules.value.filter((item) => moduleHasChildren(modulePlatformCode(item), item.id)).map((item) => item.id);
   form.platform = platformOptions.value[0]?.code || "ERP";

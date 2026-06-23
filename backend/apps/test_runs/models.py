@@ -1,59 +1,9 @@
 from django.db import models
 
-from apps.api_testing.models import ApiScenario, ApiSuite
+from apps.api_testing.models import ApiSuite
 from apps.core.db_comments import apply_model_comments
-from apps.core.models import OwnedModel, TimestampedModel
-from apps.projects.models import Environment, Platform, Project
-from apps.ui_testing.models import UiSuite
-
-
-class TestPlan(OwnedModel):
-    class PlanType(models.TextChoices):
-        API = "api", "API"
-        UI = "ui", "UI"
-        MIXED = "mixed", "Mixed"
-
-    class FailureStrategy(models.TextChoices):
-        CONTINUE = "continue", "Continue"
-        FAST_FAIL = "fast_fail", "Fast fail"
-
-    class Status(models.TextChoices):
-        PENDING = "pending", "Pending"
-        RUNNING = "running", "Running"
-        COMPLETED = "completed", "Completed"
-
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="test_plans")
-    platform_ref = models.ForeignKey(Platform, null=True, blank=True, on_delete=models.CASCADE, related_name="test_plans")
-    environment = models.ForeignKey(
-        Environment,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="test_plans",
-    )
-    name = models.CharField(max_length=128)
-    plan_type = models.CharField(max_length=16, choices=PlanType.choices, default=PlanType.API)
-    api_suites = models.ManyToManyField(ApiSuite, blank=True, related_name="test_plans")
-    api_scenarios = models.ManyToManyField(ApiScenario, blank=True, related_name="test_plans")
-    ui_suites = models.ManyToManyField(UiSuite, blank=True, related_name="test_plans")
-    module_ids = models.JSONField(default=list, blank=True)
-    api_ids = models.JSONField(default=list, blank=True)
-    variables = models.JSONField(default=dict, blank=True)
-    description = models.TextField(blank=True)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
-    concurrency = models.PositiveSmallIntegerField(default=1)
-    retry_count = models.PositiveSmallIntegerField(default=0)
-    timeout_seconds = models.PositiveSmallIntegerField(default=30)
-    failure_strategy = models.CharField(max_length=16, choices=FailureStrategy.choices, default=FailureStrategy.CONTINUE)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        db_table_comment = '测试计划表：组合接口套件、接口场景和UI套件形成可执行计划。'
-        unique_together = [("project", "name")]
-        ordering = ["project_id", "name"]
-
-    def __str__(self) -> str:
-        return self.name
+from apps.core.models import TimestampedModel
+from apps.projects.models import Environment
 
 
 class TestRun(TimestampedModel):
@@ -68,8 +18,9 @@ class TestRun(TimestampedModel):
         SCHEDULE = "schedule", "Schedule"
         WEBHOOK = "webhook", "Webhook"
 
-    plan = models.ForeignKey(TestPlan, on_delete=models.CASCADE, related_name="runs")
+    suite = models.ForeignKey(ApiSuite, on_delete=models.CASCADE, related_name="runs")
     environment = models.ForeignKey(Environment, null=True, blank=True, on_delete=models.SET_NULL, related_name="runs")
+    schedule = models.ForeignKey("scheduling.ScheduledPlan", null=True, blank=True, on_delete=models.SET_NULL, related_name="runs")
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
     trigger_type = models.CharField(max_length=16, choices=TriggerType.choices, default=TriggerType.MANUAL)
     celery_task_id = models.CharField(max_length=128, blank=True)
@@ -82,11 +33,11 @@ class TestRun(TimestampedModel):
     error_message = models.TextField(blank=True)
 
     class Meta:
-        db_table_comment = '测试执行记录表：一次测试计划运行的总记录和报告汇总。'
+        db_table_comment = "测试执行记录表：一次测试套件运行的总记录和报告汇总。"
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.plan.name}#{self.pk}"
+        return f"{self.suite.name}#{self.pk}"
 
 
 class TestRunStep(TimestampedModel):
@@ -110,33 +61,17 @@ class TestRunStep(TimestampedModel):
     duration_ms = models.PositiveIntegerField(default=0)
 
     class Meta:
-        db_table_comment = '测试执行步骤表：一次测试运行中每个接口/场景/UI步骤的结果明细。'
+        db_table_comment = "测试执行步骤表：一次测试运行中每个接口/场景/UI步骤的结果明细。"
         ordering = ["run_id", "sort_order", "id"]
 
     def __str__(self) -> str:
         return self.step_name
 
 
-apply_model_comments(TestPlan, "测试计划表：组合接口套件、接口场景和UI套件形成可执行计划。", {
-    "project": "所属项目ID。",
-    "platform_ref": "关联平台ID。",
-    "environment": "默认运行环境ID。",
-    "name": "计划名称。",
-    "plan_type": "计划类型：API/UI/混合。",
-    "module_ids": "计划覆盖的接口目录ID列表。",
-    "api_ids": "计划覆盖的接口ID列表。",
-    "variables": "计划级运行变量。",
-    "description": "计划说明。",
-    "status": "计划状态。",
-    "concurrency": "并发数。",
-    "retry_count": "失败重试次数。",
-    "timeout_seconds": "单步骤超时时间秒数。",
-    "failure_strategy": "失败处理策略。",
-    "is_active": "是否启用。",
-})
-apply_model_comments(TestRun, "测试执行记录表：一次测试计划运行的总记录和报告汇总。", {
-    "plan": "关联测试计划ID。",
+apply_model_comments(TestRun, "测试执行记录表：一次测试套件运行的总记录和报告汇总。", {
+    "suite": "关联测试套件ID。",
     "environment": "本次运行环境ID。",
+    "schedule": "来源定时任务ID。",
     "status": "执行状态。",
     "trigger_type": "触发方式：手动/定时/Webhook。",
     "celery_task_id": "异步任务ID。",
