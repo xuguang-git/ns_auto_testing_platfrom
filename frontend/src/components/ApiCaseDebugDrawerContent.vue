@@ -2,7 +2,7 @@
   <div class="case-debug-content">
     <header class="debug-head">
       <div>
-        <span class="muted">用例调试</span>
+        <span class="muted">{{ title }}</span>
         <h3>{{ caseName }}</h3>
         <p><span class="method-mini" :class="request.method">{{ request.method || "-" }}</span> {{ request.path || "-" }}</p>
       </div>
@@ -63,6 +63,7 @@
 import { computed, defineComponent, h, ref } from "vue";
 
 const props = defineProps<{
+  title?: string;
   caseName: string;
   request: Record<string, any>;
   result?: Record<string, any> | null;
@@ -78,6 +79,7 @@ defineEmits<{
 
 const requestTab = ref("params");
 const responseTab = ref("body");
+const title = computed(() => props.title || "用例调试");
 const environmentName = computed(() => props.environmentName || "-");
 const responseStatus = computed(() => props.result?.response?.status_code || "-");
 const responseElapsed = computed(() => props.result?.response?.elapsed_ms ? `${props.result.response.elapsed_ms}ms` : "-");

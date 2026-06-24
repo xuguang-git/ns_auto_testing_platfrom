@@ -15,7 +15,9 @@ env = environ.Env(
     DB_PASSWORD=(str, "root"),
     DB_HOST=(str, "127.0.0.1"),
     DB_PORT=(int, 3306),
-    REDIS_URL=(str, "redis://127.0.0.1:6379/0"),
+    REDIS_URL=(str, "redis://127.0.0.1:6379/1"),
+    DJANGO_CACHE_URL=(str, "redis://127.0.0.1:6379/2"),
+    CELERY_RESULT_EXPIRES=(int, 24 * 60 * 60),
     JAVA_BIN=(str, "java"),
     JMETER_BIN=(str, "jmeter"),
     PERF_RESULT_DIR=(str, str(BASE_DIR / "perf_results")),
@@ -155,6 +157,7 @@ REST_FRAMEWORK = {
 
 CELERY_BROKER_URL = env("REDIS_URL")
 CELERY_RESULT_BACKEND = env("REDIS_URL")
+CELERY_RESULT_EXPIRES = env("CELERY_RESULT_EXPIRES")
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
@@ -162,6 +165,13 @@ CELERY_BEAT_SCHEDULE = {
     "dispatch-scheduled-plans-every-minute": {
         "task": "apps.scheduling.tasks.dispatch_scheduled_plans",
         "schedule": 60.0,
+    }
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("DJANGO_CACHE_URL"),
     }
 }
 
