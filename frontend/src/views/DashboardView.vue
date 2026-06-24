@@ -1,7 +1,6 @@
 <template>
   <div>
     <div class="dashboard-welcome system-goal">
-      <span class="goal-version">NS-ATP v1.1</span>
       <h2>自动化测试闭环工作台</h2>
       <p>围绕平台维护、模块管理、接口管理、测试计划、执行中心和报告沉淀，支撑“资产维护 -> 计划编排 -> 执行验证 -> 结果追踪”的测试流程。</p>
       <small>{{ todayText }} · 上次登录：昨天 18:32</small>

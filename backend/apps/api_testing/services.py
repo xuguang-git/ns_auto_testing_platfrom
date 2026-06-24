@@ -57,6 +57,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "response": {"elapsed_ms": 0},
             "assertions": [],
             "variables": extracted_variables,
+            "runtime_variables": _safe_variable_snapshot(variables),
             "logs": [*data_logs, *_request_error_logs(exc)],
             **error_fields,
         }
@@ -70,6 +71,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "response": {"elapsed_ms": 0},
             "assertions": [],
             "variables": extracted_variables,
+            "runtime_variables": _safe_variable_snapshot(variables),
             "logs": [*data_logs, message],
             "error": message,
         }
@@ -115,19 +117,29 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
         response_text = _decode_response_text(resp, content)
         response_body = _parse_response_body(resp, response_text)
         response_variables = _extract_response_variables(payload.get("extractors") or [], response_body)
+        missing_extractors = _missing_response_extractors(payload.get("extractors") or [], response_body)
         if response_variables:
             variables.update(response_variables)
             extracted_variables.update(response_variables)
             data_logs.append(f"Response extractors captured {len(response_variables)} variable(s).")
+        if missing_extractors:
+            data_logs.append(f"Response extractors missed: {', '.join(missing_extractors)}.")
         post_logs, post_variables = _apply_test_data_sources(payload.get("post_test_data_sources") or [], variables, "post")
         data_logs.extend(post_logs)
+        variables.update(post_variables)
         extracted_variables.update(post_variables)
         assertion_results = evaluate_assertions(payload.get("assertions") or [], resp, response_body, elapsed_ms)
         passed = all(item["passed"] for item in assertion_results)
         return {
             "ok": True,
             "passed": passed,
-            "request": {"method": method, "url": resp.request.url, "headers": dict(resp.request.headers)},
+            "request": {
+                "method": method,
+                "url": resp.request.url,
+                "headers": dict(resp.request.headers),
+                "params": params,
+                "body": body,
+            },
             "response": {
                 "status_code": resp.status_code,
                 "reason": resp.reason,
@@ -139,6 +151,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             },
             "assertions": assertion_results,
             "variables": extracted_variables,
+            "runtime_variables": _safe_variable_snapshot(variables),
             "logs": [*data_logs, *session_logs, f"{method} {resp.request.url}", f"HTTP {resp.status_code} {elapsed_ms}ms"],
         }
     except requests.RequestException as exc:
@@ -151,6 +164,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "response": {"elapsed_ms": elapsed_ms},
             "assertions": [],
             "variables": extracted_variables,
+            "runtime_variables": _safe_variable_snapshot(variables),
             "logs": [*data_logs, *session_logs, *_request_error_logs(exc)],
             **error_fields,
         }
@@ -232,8 +246,33 @@ def _extract_response_variables(extractors: list[dict[str, Any]], response_body:
             continue
         if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
             continue
-        values[name] = _json_path(response_body, path)
+        matched, value = _json_path_match(response_body, path)
+        if matched:
+            values[name] = value
     return values
+
+
+def _missing_response_extractors(extractors: list[dict[str, Any]], response_body: Any) -> list[str]:
+    missed: list[str] = []
+    for extractor in extractors:
+        name = str(extractor.get("name") or "").strip()
+        path = str(extractor.get("path") or extractor.get("key") or "").strip()
+        if not name or not path:
+            continue
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
+            continue
+        matched, _ = _json_path_match(response_body, path)
+        if not matched:
+            missed.append(name)
+    return missed
+
+
+def _safe_variable_snapshot(variables: dict[str, Any]) -> dict[str, Any]:
+    try:
+        json.dumps(variables, ensure_ascii=False)
+        return dict(variables)
+    except TypeError:
+        return json.loads(json.dumps(variables, ensure_ascii=False, default=str))
 
 
 def evaluate_assertions(assertions: list[dict[str, Any]], resp, response_body: Any, elapsed_ms: int) -> list[dict[str, Any]]:
@@ -655,16 +694,54 @@ def _json_path(data: Any, path: str):
     if not path:
         return data
     current = data
-    for part in path.removeprefix("$.").split("."):
-        if part == "":
-            continue
-        if isinstance(current, dict):
+    for part in _json_path_parts(path):
+        if isinstance(current, dict) and isinstance(part, str):
             current = current.get(part)
-        elif isinstance(current, list) and part.isdigit():
-            current = current[int(part)]
+        elif isinstance(current, list) and isinstance(part, int):
+            if part < 0 or part >= len(current):
+                return None
+            current = current[part]
         else:
             return None
     return current
+
+
+def _json_path_match(data: Any, path: str) -> tuple[bool, Any]:
+    if not path:
+        return True, data
+    current = data
+    for part in _json_path_parts(path):
+        if isinstance(current, dict) and isinstance(part, str):
+            if part not in current:
+                return False, None
+            current = current.get(part)
+        elif isinstance(current, list) and isinstance(part, int):
+            if part < 0 or part >= len(current):
+                return False, None
+            current = current[part]
+        else:
+            return False, None
+    return True, current
+
+
+def _json_path_parts(path: str) -> list[str | int]:
+    parts: list[str | int] = []
+    normalized = path.strip().removeprefix("$").removeprefix(".")
+    for segment in normalized.split("."):
+        if not segment:
+            continue
+        cursor = 0
+        for match in re.finditer(r"([^\[\]]+)|\[(\d+)\]", segment):
+            if match.start() != cursor:
+                return [segment]
+            if match.group(1) is not None:
+                parts.append(match.group(1))
+            else:
+                parts.append(int(match.group(2)))
+            cursor = match.end()
+        if cursor != len(segment):
+            return [segment]
+    return parts
 
 
 def _compare(actual, expected, operator: str) -> bool:

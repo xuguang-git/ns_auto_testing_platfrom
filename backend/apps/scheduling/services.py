@@ -41,7 +41,7 @@ def trigger_scheduled_plan(schedule: ScheduledPlan, trigger_type: str = TestRun.
         )
         schedule.last_run_at = timezone.now()
         schedule.last_run_id = test_run.id
-        schedule.last_status = test_run.status
+        schedule.last_status = TestRun.Status.RUNNING
         schedule.run_count += 1
         schedule.next_run_at = compute_next_run_at(schedule.cron, schedule.last_run_at) if schedule.is_active else None
         schedule.save(update_fields=["last_run_at", "last_run_id", "last_status", "run_count", "next_run_at", "updated_at"])

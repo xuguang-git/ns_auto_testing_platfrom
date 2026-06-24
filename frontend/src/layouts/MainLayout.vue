@@ -4,7 +4,6 @@
       <RouterLink class="brand" to="/dashboard">
         <span class="brand-mark brand-image"><img src="/system-icon.jpg" alt="NS" /></span>
         <span class="brand-name">NS-ATP</span>
-        <span class="brand-version">v2.0</span>
       </RouterLink>
 
       <nav class="side-nav grouped-nav">

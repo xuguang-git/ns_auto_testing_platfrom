@@ -1,3 +1,6 @@
+import re
+import uuid
+
 from rest_framework import serializers
 
 from apps.api_testing.models import ApiDefinition, ApiModule
@@ -184,6 +187,8 @@ class EnvironmentSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
 
 class DatabaseConnectionSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
     environment_name = serializers.CharField(source="environment.name", read_only=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    has_password = serializers.SerializerMethodField()
 
     class Meta:
         model = DatabaseConnection
@@ -193,6 +198,13 @@ class DatabaseConnectionSerializer(OperatorFieldsMixin, serializers.ModelSeriali
             "db_type",
             "environment",
             "environment_name",
+            "host",
+            "port",
+            "database_name",
+            "username",
+            "password",
+            "has_password",
+            "env_prefix",
             "description",
             "is_active",
             "last_check_status",
@@ -201,7 +213,69 @@ class DatabaseConnectionSerializer(OperatorFieldsMixin, serializers.ModelSeriali
             "created_at",
             "updated_at",
         ]
-        read_only_fields = fields
+        read_only_fields = [
+            "id",
+            "environment_name",
+            "has_password",
+            "last_check_status",
+            "last_check_message",
+            "last_checked_at",
+            "created_at",
+            "updated_at",
+        ]
+        extra_kwargs = {"env_prefix": {"required": False, "allow_blank": True}}
+
+    def get_has_password(self, obj):
+        return bool(obj.password_ciphertext)
+
+    def to_representation(self, instance):
+        """数据库连接对外展示时隐藏主机敏感信息。"""
+        data = super().to_representation(instance)
+        data["host"] = self.mask_host(instance.host)
+        return data
+
+    @staticmethod
+    def mask_host(host: str) -> str:
+        """保留主机的可识别轮廓，避免把完整内网或云数据库地址暴露到前端。"""
+        value = str(host or "").strip()
+        if not value:
+            return ""
+        if "." not in value:
+            return f"{value[:2]}***" if len(value) > 2 else "***"
+        parts = value.split(".")
+        first = parts[0]
+        masked_first = f"{first[:3]}***" if len(first) > 3 else "***"
+        if len(parts) <= 2:
+            return ".".join([masked_first, parts[-1]])
+        return ".".join([masked_first, *parts[-2:]])
+
+    def validate(self, attrs):
+        if not attrs.get("env_prefix") and not getattr(self.instance, "env_prefix", ""):
+            name = attrs.get("name") or getattr(self.instance, "name", "")
+            base = re.sub(r"[^A-Za-z0-9_]", "_", str(name)).upper().strip("_") or "DB"
+            attrs["env_prefix"] = f"{base}_{uuid.uuid4().hex[:8]}"
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop("password", "")
+        if password:
+            from apps.scheduling.crypto import encrypt_secret
+
+            validated_data["password_ciphertext"] = encrypt_secret(password)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)
+        if password:
+            from apps.scheduling.crypto import encrypt_secret
+
+            instance.password_ciphertext = encrypt_secret(password)
+        if validated_data.get("host") == self.mask_host(instance.host):
+            validated_data.pop("host")
+        for key, value in validated_data.items():
+            setattr(instance, key, value)
+        instance.save()
+        return instance
 
 class DataFactoryCapabilitySerializer(OperatorFieldsMixin, serializers.ModelSerializer):
     environment_name = serializers.CharField(source="environment.name", read_only=True)
