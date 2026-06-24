@@ -11,7 +11,7 @@
         :key="run.id"
         class="report-item"
         :class="{ active: selectedRun?.id === run.id }"
-        @click="selectedRun = run"
+        @click="selectRunFromList(run)"
       >
         <div class="report-item-head">
           <strong>{{ reportName(run) }}</strong>
@@ -86,11 +86,12 @@
         </section>
       </div>
     </section>
-    <el-empty v-else description="暂无报告" style="flex: 1" />
+    <el-empty v-else :description="emptyReportText" style="flex: 1" />
 
     <el-drawer v-model="stepDrawerVisible" direction="btt" size="72%" :with-header="false" destroy-on-close>
       <ApiCaseDebugDrawerContent
         v-if="activeStep"
+        title="执行结果"
         :case-name="activeStep.step_name || '步骤详情'"
         :request="stepRequest(activeStep)"
         :result="stepResult(activeStep)"
@@ -103,7 +104,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { platformApi, unwrapList } from "@/api/platform";
 import ApiCaseDebugDrawerContent from "@/components/ApiCaseDebugDrawerContent.vue";
@@ -112,6 +114,8 @@ const loading = ref(false);
 const keyword = ref("");
 const runs = ref<any[]>([]);
 const selectedRun = ref<any>();
+const route = useRoute();
+const router = useRouter();
 const stepDrawerVisible = ref(false);
 const activeStep = ref<any>();
 const expandedGroups = ref<Set<string>>(new Set());
@@ -127,6 +131,7 @@ const filteredRuns = computed(() => {
   });
 });
 const stepGroups = computed(() => selectedRun.value?.step_groups?.length ? selectedRun.value.step_groups : fallbackStepGroups(selectedRun.value?.steps || []));
+const emptyReportText = computed(() => routeRunId.value ? "报告不存在或已被删除" : "暂无报告");
 
 const runStatusText = (status: string) => ({ pending: "待执行", running: "执行中", completed: "完成", failed: "失败" }[status] || status || "未知");
 const runStatusClass = (status: string) => ({ completed: "success", failed: "danger", running: "warning", pending: "muted" }[status] || "muted");
@@ -213,13 +218,24 @@ const stepErrorText = (step: any) => {
 
 const stepRequest = (step: any) => {
   const request = step?.request || {};
+  const responseRequest = step?.response?.request || {};
+  const requestBody = request.body
+    ?? request.json
+    ?? request.data
+    ?? request.payload
+    ?? request.request_body
+    ?? request.body_text
+    ?? responseRequest.body
+    ?? responseRequest.json
+    ?? responseRequest.data
+    ?? responseRequest.payload;
   return {
     platform: request.platform || selectedRun.value?.suite_name || "-",
-    method: request.method || "-",
-    path: request.path || request.url || "-",
-    query_params: request.query_params || request.params || request.query || {},
-    headers: request.headers || {},
-    body: request.body ?? request.json ?? request.data ?? request.payload,
+    method: request.method || responseRequest.method || "-",
+    path: request.path || request.url || responseRequest.path || responseRequest.url || "-",
+    query_params: request.query_params || request.params || request.query || responseRequest.query_params || responseRequest.params || {},
+    headers: request.headers || responseRequest.headers || {},
+    body: requestBody,
     auth_config: request.auth_config || {},
     assertions: step?.assertions || request.assertions || [],
   };
@@ -237,14 +253,58 @@ const openStepDetail = (step: any) => {
   stepDrawerVisible.value = true;
 };
 
-onMounted(async () => {
+const routeRunId = computed(() => {
+  const value = Array.isArray(route.query.run) ? route.query.run[0] : route.query.run;
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+});
+
+const selectRun = (run?: any) => {
+  selectedRun.value = run;
+  expandedGroups.value = new Set();
+};
+
+const resolveSelectedRun = async () => {
+  const targetId = routeRunId.value;
+  if (!targetId) {
+    selectRun(runs.value[0]);
+    return;
+  }
+
+  const localRun = runs.value.find((item) => item.id === targetId);
+  if (localRun) {
+    selectRun(localRun);
+    return;
+  }
+
+  try {
+    const { data } = await platformApi.testRun(targetId);
+    runs.value = [data, ...runs.value.filter((item) => item.id !== data.id)];
+    selectRun(data);
+  } catch {
+    selectRun(undefined);
+  }
+};
+
+const selectRunFromList = (run: any) => {
+  selectRun(run);
+  router.replace({ path: route.path, query: { ...route.query, run: String(run.id) } });
+};
+
+const loadRuns = async () => {
   loading.value = true;
   try {
     const { data } = await platformApi.testRuns();
     runs.value = unwrapList(data);
-    selectedRun.value = runs.value[0];
+    await resolveSelectedRun();
   } finally {
     loading.value = false;
   }
+};
+
+watch(() => route.query.run, () => {
+  if (!loading.value) resolveSelectedRun();
 });
+
+onMounted(loadRuns);
 </script>

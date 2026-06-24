@@ -7,7 +7,7 @@ from apps.api_testing.models import ApiModule
 from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
 from apps.api_testing.services import clear_environment_request_control_cache
 from apps.core.viewsets import OperatorAuditModelViewSet
-from apps.projects.db_services import check_database_connection, execute_test_data_source, sync_configured_database_connections
+from apps.projects.db_services import check_database_connection, execute_test_data_source
 from apps.projects.models import DataFactoryCapability, DatabaseConnection, Environment, EnvironmentPreRequestOperation, EnvironmentRequestControl, EnvironmentVariable, Platform, Project, TestDataSource
 from apps.projects.serializers import (
     DataFactoryCapabilitySerializer,
@@ -149,19 +149,17 @@ class EnvironmentRequestControlViewSet(OperatorAuditModelViewSet):
         clear_environment_request_control_cache(environment_id)
 
 
-class DatabaseConnectionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class DatabaseConnectionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = DatabaseConnection.objects.select_related("environment", "created_by", "updated_by").all()
     serializer_class = DatabaseConnectionSerializer
-    permission_classes = [action_permission("environment.read")]
+    permission_classes = [action_permission("environment.read", "environment.write", "environment.delete")]
     filterset_fields = ["environment", "db_type", "is_active", "last_check_status"]
     search_fields = ["name", "description"]
-
-    def get_queryset(self):
-        configured = sync_configured_database_connections()
-        queryset = super().get_queryset()
-        if configured:
-            return queryset.filter(env_prefix__in=configured)
-        return queryset.none()
+    audit_module = "database_connection"
+    delete_object_label = "数据库连接"
+    delete_guard_rules = (
+        DeleteGuardRule("test_data_sources", "测试数据源"),
+    )
 
     @decorators.action(detail=True, methods=["post"], url_path="check")
     def check(self, request, pk=None):

@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 
 from apps.core.serializers import OperatorFieldsMixin
@@ -128,6 +130,7 @@ class ScheduledPlanSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
     environment_name = serializers.CharField(source="environment.name", read_only=True)
     notification_names = serializers.SerializerMethodField()
     notification_template_name = serializers.CharField(source="notification_template.name", read_only=True)
+    last_status = serializers.SerializerMethodField()
 
     class Meta:
         model = ScheduledPlan
@@ -152,6 +155,18 @@ class ScheduledPlanSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
 
     def get_notification_names(self, obj):
         return list(obj.notifications.values_list("name", flat=True))
+
+    def get_last_status(self, obj):
+        if obj.last_status not in {"pending", "running"} or not obj.last_run_id:
+            return obj.last_status
+        last_run = next((item for item in obj.runs.all() if item.id == obj.last_run_id), None)
+        if not last_run:
+            return obj.last_status
+        if last_run.status in {"pending", "running"}:
+            return last_run.status
+        if last_run.status == "failed":
+            return "failed"
+        return "failed" if int((last_run.summary or {}).get("failed") or 0) > 0 else "success"
 
     def validate_cron(self, value):
         probe = ScheduledPlan(cron=value, is_active=True)
@@ -207,9 +222,13 @@ class NotificationTemplateSerializer(OperatorFieldsMixin, serializers.ModelSeria
         return value
 
     def validate_title_template(self, value):
-        value = value.strip()
+        # 标题模板最终会映射到飞书消息标题，这里统一保存为纯文本。
+        value = re.sub(r"<[^>]+>", "", value or "")
+        value = value.replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").strip()
         if not value:
             raise serializers.ValidationError("请填写标题模板。")
+        if len(value) > 160:
+            raise serializers.ValidationError("标题模板不能超过160个字符。")
         return value
 
     def validate_content_template(self, value):

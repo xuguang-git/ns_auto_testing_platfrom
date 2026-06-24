@@ -3,10 +3,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import html
 import re
 import time
 from dataclasses import dataclass
-from html.parser import HTMLParser
 from typing import Any
 
 import requests
@@ -35,6 +35,7 @@ TEMPLATE_VARIABLES = {
     "report_url": "报告地址",
 }
 VARIABLE_RE = re.compile(r"{{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}")
+FEISHU_TITLE_MAX_LENGTH = 100
 
 
 @dataclass
@@ -96,7 +97,7 @@ def build_template_context(test_run: TestRun, schedule: ScheduledPlan) -> dict[s
 def render_template_message(template: NotificationTemplate, context: dict[str, str]) -> RenderedMessage:
     """按白名单变量渲染模板，未知变量保留原文，避免误替换。"""
     return RenderedMessage(
-        title=_render_text(template.title_template, context),
+        title=_normalize_feishu_title(_render_text(template.title_template, context)),
         content=_render_text(template.content_template, context),
     )
 
@@ -134,17 +135,7 @@ def send_notification(
 
 def _send_feishu(channel: NotificationChannel, message: RenderedMessage) -> None:
     webhook = decrypt_secret(channel.webhook_ciphertext)
-    payload: dict[str, Any] = {
-        "msg_type": "post",
-        "content": {
-            "post": {
-                "zh_cn": {
-                    "title": _strip_html(message.title),
-                    "content": _html_to_feishu_post(message.content),
-                }
-            }
-        },
-    }
+    payload = _build_feishu_card_payload(message)
     if channel.signature_ciphertext:
         timestamp = str(int(time.time()))
         secret = decrypt_secret(channel.signature_ciphertext)
@@ -155,6 +146,40 @@ def _send_feishu(channel: NotificationChannel, message: RenderedMessage) -> None
     data = response.json()
     if data.get("code") not in (None, 0):
         raise RuntimeError(data.get("msg") or data.get("message") or "飞书推送失败")
+
+
+def _build_feishu_card_payload(message: RenderedMessage) -> dict[str, Any]:
+    """构造飞书交互卡片消息，让标题模板展示在卡片标题区域。"""
+    title = _normalize_feishu_title(message.title)
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": _feishu_card_theme(message),
+                "title": {"tag": "plain_text", "content": title},
+            },
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": _html_to_feishu_markdown(message.content),
+                    },
+                }
+            ],
+        },
+    }
+
+
+def _feishu_card_theme(message: RenderedMessage) -> str:
+    """根据执行结果给飞书卡片标题区设置基础色。"""
+    text = f"{message.title}\n{_strip_html(message.content)}"
+    if "失败" in text:
+        return "red"
+    if "成功" in text or "通过" in text:
+        return "green"
+    return "blue"
 
 
 def _build_feishu_sign(timestamp: str, secret: str) -> str:
@@ -203,66 +228,36 @@ def _render_text(text: str, context: dict[str, str]) -> str:
     return VARIABLE_RE.sub(replace, text or "")
 
 
-class _FeishuPostParser(HTMLParser):
-    """把平台内富文本HTML转换为飞书机器人post消息片段。"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.lines: list[list[dict[str, Any]]] = [[]]
-        self.styles: list[str] = []
-        self.href_stack: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"p", "div", "br"}:
-            self._new_line()
-        elif tag in {"strong", "b"}:
-            self.styles.append("bold")
-        elif tag in {"em", "i"}:
-            self.styles.append("italic")
-        elif tag == "u":
-            self.styles.append("underline")
-        elif tag == "a":
-            href = dict(attrs).get("href") or ""
-            self.href_stack.append(href)
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in {"p", "div"}:
-            self._new_line()
-        elif tag in {"strong", "b"} and "bold" in self.styles:
-            self.styles.remove("bold")
-        elif tag in {"em", "i"} and "italic" in self.styles:
-            self.styles.remove("italic")
-        elif tag == "u" and "underline" in self.styles:
-            self.styles.remove("underline")
-        elif tag == "a" and self.href_stack:
-            self.href_stack.pop()
-
-    def handle_data(self, data: str) -> None:
-        text = data.replace("\xa0", " ")
-        if not text:
-            return
-        item: dict[str, Any] = {"tag": "text", "text": text}
-        if self.href_stack and self.href_stack[-1]:
-            item = {"tag": "a", "text": text, "href": self.href_stack[-1]}
-        self.lines[-1].append(item)
-
-    def result(self) -> list[list[dict[str, Any]]]:
-        return [line for line in self.lines if line]
-
-    def _new_line(self) -> None:
-        if self.lines[-1]:
-            self.lines.append([])
+def _html_to_feishu_markdown(value: str) -> str:
+    """把平台富文本转成飞书卡片支持的基础Markdown文本。"""
+    text = value or ""
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</(p|div|li)>", "\n", text)
+    text = re.sub(r"(?i)<li[^>]*>", "- ", text)
+    text = re.sub(r"(?is)<a\s+[^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>", _replace_html_link, text)
+    text = _strip_html(text)
+    lines = [line.strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line) or "暂无消息内容"
 
 
-def _html_to_feishu_post(value: str) -> list[list[dict[str, Any]]]:
-    parser = _FeishuPostParser()
-    parser.feed(value or "")
-    return parser.result() or [[{"tag": "text", "text": _strip_html(value)}]]
+def _replace_html_link(match: re.Match) -> str:
+    label = _strip_html(match.group(2)) or match.group(1)
+    return f"[{label}]({match.group(1)})"
 
 
 def _strip_html(value: str) -> str:
     text = re.sub(r"<[^>]+>", "", value or "")
-    return text.replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").strip()
+    return html.unescape(text.replace("&nbsp;", " ")).strip()
+
+
+def _normalize_feishu_title(value: str) -> str:
+    """清洗飞书标题，避免富文本或超长内容导致机器人消息发送失败。"""
+    title = re.sub(r"\s+", " ", _strip_html(value)).strip()
+    if not title:
+        return "测试执行通知"
+    if len(title) <= FEISHU_TITLE_MAX_LENGTH:
+        return title
+    return f"{title[: FEISHU_TITLE_MAX_LENGTH - 1]}…"
 
 
 def _format_dt(value) -> str:

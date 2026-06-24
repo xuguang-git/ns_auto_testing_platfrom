@@ -1,14 +1,15 @@
 ﻿<template>
   <RouterView v-slot="{ Component }">
-    <component :is="Component" v-if="Component && !pageError" />
-    <div v-else v-mojibake class="app-error-state">
+    <div v-if="pageError" v-mojibake class="app-error-state">
       <h1>页面加载失败</h1>
-      <p>{{ pageError || "当前路径暂时无法展示，请刷新后重试。" }}</p>
+      <p>{{ pageError }}</p>
       <div>
         <button type="button" @click="reloadPage">刷新</button>
         <button type="button" @click="goHome">返回首页</button>
       </div>
     </div>
+    <component :is="Component" v-else-if="Component" />
+    <div v-else class="app-route-loading">页面加载中...</div>
   </RouterView>
 </template>
 

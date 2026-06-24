@@ -425,6 +425,36 @@
             </el-select>
             <el-input v-model="stepBodyText" type="textarea" :rows="12" placeholder='{"id":"{{orderId}}"}' />
           </el-tab-pane>
+          <el-tab-pane label="数据源" name="dataSources">
+            <div class="step-data-source-editor">
+              <el-form label-width="96px">
+                <el-form-item label="前置数据源">
+                  <el-select
+                    v-model="stepEditForm.pre_data_source_ids"
+                    multiple
+                    filterable
+                    collapse-tags
+                    collapse-tags-tooltip
+                    placeholder="接口执行前查询并写入变量池"
+                  >
+                    <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="后置数据源">
+                  <el-select
+                    v-model="stepEditForm.post_data_source_ids"
+                    multiple
+                    filterable
+                    collapse-tags
+                    collapse-tags-tooltip
+                    placeholder="接口执行后查询并写入变量池"
+                  >
+                    <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
+                  </el-select>
+                </el-form-item>
+              </el-form>
+            </div>
+          </el-tab-pane>
           <el-tab-pane label="提取变量" name="extractors">
             <div class="kv-editor extractor-editor">
               <div class="kv-row extractor-row kv-head"><span>变量名</span><span>JSONPath</span><span></span></div>
@@ -587,6 +617,8 @@ interface StepEditForm {
   headers: RowItem[];
   query_params: RowItem[];
   body_type: string;
+  pre_data_source_ids: number[];
+  post_data_source_ids: number[];
   extractors: ExtractorItem[];
   assertions: AssertionItem[];
 }
@@ -681,6 +713,8 @@ const stepEditForm = reactive<StepEditForm>({
   headers: [],
   query_params: [],
   body_type: "none",
+  pre_data_source_ids: [],
+  post_data_source_ids: [],
   extractors: [],
   assertions: [],
 });
@@ -1124,6 +1158,8 @@ const openStepEditor = (step: ScenarioStep, index: number) => {
     headers: normalizeRows(cloneJson(step.headers as RowItem[], [])),
     query_params: normalizeRows(cloneJson(step.query_params as RowItem[], [])),
     body_type: step.body_type || "none",
+    pre_data_source_ids: cloneJson(step.pre_data_source_ids || [], []),
+    post_data_source_ids: cloneJson(step.post_data_source_ids || [], []),
     extractors: normalizeExtractors(cloneJson(step.extractors as ExtractorItem[], [])),
     assertions: normalizeAssertions(cloneJson(step.assertions as AssertionItem[], [])),
   });
@@ -1167,6 +1203,8 @@ const applyStepEdit = () => {
     body_type: stepEditForm.body_type,
     body,
     auth_config,
+    pre_data_source_ids: cloneJson(stepEditForm.pre_data_source_ids || [], []),
+    post_data_source_ids: cloneJson(stepEditForm.post_data_source_ids || [], []),
     extractors: normalizeExtractors(stepEditForm.extractors),
     assertions: normalizeAssertions(stepEditForm.assertions),
   }));
