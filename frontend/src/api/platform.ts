@@ -1,5 +1,5 @@
 import { http } from "@/api/http";
-import { getOrLoadResource } from "@/api/resourceCache";
+import { getOrLoadResource, invalidateResource } from "@/api/resourceCache";
 
 export interface ListResponse<T> {
   count: number;
@@ -66,9 +66,9 @@ export const platformApi = {
   deleteApiMockRule: (id: number) => http.delete(`/api-mock-rules/${id}/`),
   apiModules: () => http.get("/api-modules/"),
   cachedApiModules: () => getOrLoadResource("platform:api-modules", async () => (await http.get("/api-modules/", { cache: false })).data),
-  createApiModule: (payload: Record<string, unknown>) => http.post("/api-modules/", payload),
-  updateApiModule: (id: number, payload: Record<string, unknown>) => http.patch(`/api-modules/${id}/`, payload),
-  deleteApiModule: (id: number) => http.delete(`/api-modules/${id}/`),
+  createApiModule: (payload: Record<string, unknown>) => withResourceInvalidation("platform:api-modules", http.post("/api-modules/", payload)),
+  updateApiModule: (id: number, payload: Record<string, unknown>) => withResourceInvalidation("platform:api-modules", http.patch(`/api-modules/${id}/`, payload)),
+  deleteApiModule: (id: number) => withResourceInvalidation("platform:api-modules", http.delete(`/api-modules/${id}/`)),
   apiSuites: (params?: Record<string, unknown>) => http.get("/api-suites/", { params }),
   cachedApiSuites: (params?: Record<string, unknown>) => getOrLoadResource(`platform:api-suites:${JSON.stringify(params || {})}`, async () => (await http.get("/api-suites/", { params, cache: false })).data),
   createApiSuite: (payload: Record<string, unknown>) => http.post("/api-suites/", payload),
@@ -138,4 +138,10 @@ export const platformApi = {
   deleteUiAction: (id: number) => http.delete(`/ui-actions/${id}/`),
   runUiCase: (id: number, payload?: Record<string, unknown>) => http.post(`/ui-cases/${id}/run/`, payload || {}, { timeout: 120000 }),
   debugApi: (payload: Record<string, unknown>) => http.post("/api-definitions/debug/", payload),
+};
+
+const withResourceInvalidation = async <T>(key: string, request: Promise<T>) => {
+  const response = await request;
+  invalidateResource(key);
+  return response;
 };

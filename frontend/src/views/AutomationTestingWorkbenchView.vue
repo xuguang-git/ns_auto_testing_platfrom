@@ -95,10 +95,10 @@
                     <small>{{ step.path }}</small>
                   </div>
                   <div class="scenario-step-card-actions">
-                    <button @click="openStepEditor(step, index)">编辑</button>
-                    <button :disabled="index === 0" @click="moveStep(index, -1)">上移</button>
-                    <button :disabled="index === scenarioSteps.length - 1" @click="moveStep(index, 1)">下移</button>
-                    <button class="danger-link" @click="removeStep(index)">删除</button>
+                    <button class="ns-text-button" @click="openStepEditor(step, index)">编辑</button>
+                    <button class="ns-text-button" :disabled="index === 0" @click="moveStep(index, -1)">上移</button>
+                    <button class="ns-text-button" :disabled="index === scenarioSteps.length - 1" @click="moveStep(index, 1)">下移</button>
+                    <button class="ns-text-button danger-link" @click="removeStep(index)">删除</button>
                   </div>
                 </article>
               </div>
@@ -107,7 +107,7 @@
                 <el-select v-model="apiToAdd" filterable placeholder="选择接口添加为步骤">
                   <el-option v-for="api in apis" :key="api.id" :label="`${api.method} ${api.name} (${api.path})`" :value="api.id" />
                 </el-select>
-                <button @click="addStepFromApi">+ 添加步骤</button>
+                <button class="ns-text-button" @click="addStepFromApi">+ 添加步骤</button>
               </div>
             </template>
 

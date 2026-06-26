@@ -20,7 +20,18 @@ import { useRouter } from "vue-router";
 const router = useRouter();
 const pageError = ref("");
 
+const isExpectedInteractionError = (error: unknown) => {
+  const value = error as any;
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (["cancel", "close"].includes(message)) return true;
+  if (value?.name === "CanceledError" || value?.code === "ERR_CANCELED") return true;
+  if (value?.isAxiosError || value?.response || value?.businessCode) return true;
+  return false;
+};
+
 onErrorCaptured((error) => {
+  // 用户取消弹窗、关闭弹窗、接口业务失败都属于可预期交互，不应触发整页失败态。
+  if (isExpectedInteractionError(error)) return false;
   pageError.value = error instanceof Error ? error.message : "页面运行异常";
   return false;
 });

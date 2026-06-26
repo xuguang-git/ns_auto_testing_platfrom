@@ -54,9 +54,9 @@
         <div class="breadcrumb">{{ activeItem.section }} / <span>{{ activeItem.label }}</span></div>
         <div class="header-tools">
           <RouterLink class="dashboard-link" to="/dashboard">控制台</RouterLink>
-          <div class="header-env">
+          <div class="header-env disabled" title="全局环境切换暂未接入业务执行链路">
             <span class="dot"></span>
-            <el-select v-model="currentEnv" class="env-switcher" size="small" teleported>
+            <el-select v-model="currentEnv" class="env-switcher" size="small" teleported disabled>
               <el-option label="测试环境" value="test" />
               <el-option label="开发环境" value="dev" />
               <el-option label="预发环境" value="staging" />
