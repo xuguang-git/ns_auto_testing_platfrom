@@ -54,11 +54,31 @@
         <div>
           <div class="api-title-row">
             <span class="method-tag" :class="selectedApi.method">{{ selectedApi.method }}</span>
-            <h1>{{ selectedApi.name }}</h1>
+            <el-input
+              v-if="editingApiName"
+              ref="apiNameInputRef"
+              v-model="apiNameDraft"
+              class="api-title-input"
+              maxlength="20"
+              show-word-limit
+              @blur="saveApiNameIfChanged"
+              @keyup.enter="blurApiNameInput"
+              @keyup.esc="cancelApiNameEdit"
+            />
+            <button v-else class="api-title-name-button" type="button" title="点击编辑接口名称" @click="startApiNameEdit">
+              <span>{{ selectedApi.name }}</span>
+            </button>
             <span class="badge" :class="statusBadgeClass(selectedApi.status)">{{ statusText(selectedApi.status) }}</span>
           </div>
-          <p>{{ platformName(selectedApi.platform) }} / {{ moduleName(selectedApi.module) }} · <code>{{ selectedApi.path }}</code></p>
-          <p class="resolved-url-line">当前环境 URL：<code>{{ resolvedRequestUrl }}</code></p>
+          <div class="api-meta-row">
+            <span class="api-meta-pill">{{ platformName(selectedApi.platform) }}</span>
+            <span class="api-meta-pill">{{ moduleName(selectedApi.module) }}</span>
+            <span class="api-path-pill"><b>路由</b><code>{{ selectedApi.path }}</code></span>
+          </div>
+          <div class="api-url-card">
+            <span>当前环境 URL</span>
+            <code>{{ resolvedRequestUrl }}</code>
+          </div>
         </div>
         <div class="api-head-actions">
           <el-button @click="goCasePage">测试用例</el-button>
@@ -84,7 +104,7 @@
                 <span>实际请求地址</span>
                 <code>{{ resolvedRequestUrl }}</code>
               </div>
-              <el-tabs v-model="debugReqTab">
+              <el-tabs v-model="debugReqTab" class="request-tabs">
                 <el-tab-pane label="Params" name="params"><KeyValueEditor v-model="paramsRows" /></el-tab-pane>
                 <el-tab-pane label="Headers" name="headers"><KeyValueEditor v-model="headerRows" /></el-tab-pane>
                 <el-tab-pane label="Body" name="body">
@@ -95,7 +115,7 @@
                 </el-tab-pane>
                 <el-tab-pane label="Auth" name="auth">
                   <div class="inline-form">
-                    <el-select v-model="authType"><el-option label="No Auth" value="none" /><el-option label="Bearer Token" value="bearer" /></el-select>
+                    <el-select v-model="authType"><el-option label="不使用认证" value="none" /><el-option label="Bearer 令牌" value="bearer" /></el-select>
                     <el-input v-model="authToken" placeholder="{{token}}" />
                   </div>
                 </el-tab-pane>
@@ -144,7 +164,7 @@
                 <strong>响应结果</strong>
                 <span v-if="debugResult" :class="responseStatusClass">{{ debugResult.response?.status_code }} · {{ debugResult.response?.elapsed_ms }}ms</span>
               </div>
-              <el-tabs v-model="debugRespTab">
+              <el-tabs v-model="debugRespTab" class="response-tabs">
                 <el-tab-pane label="Body" name="body"><pre>{{ responseBodyText }}</pre></el-tab-pane>
                 <el-tab-pane label="Headers" name="headers"><pre>{{ responseHeadersText }}</pre></el-tab-pane>
                 <el-tab-pane label="断言" name="assertions">
@@ -301,7 +321,7 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, defineComponent, h, onMounted, reactive, ref, watch } from "vue";
+import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { platformApi, unwrapList } from "@/api/platform";
@@ -344,7 +364,7 @@ const KeyValueEditor = defineComponent({
           h("td", [h("button", { class: "kv-remove-row", type: "button", title: "删除字段", onClick: () => remove(index) }, "-")]),
         ]))),
       ]),
-      h("button", { class: "add-row", onClick: add }, "+ Add row"),
+      h("button", { class: "add-row", type: "button", onClick: add }, "+ 新增字段"),
     ]);
   },
 });
@@ -360,6 +380,10 @@ const debugRespTab = ref("body");
 const loading = ref(false);
 const sending = ref(false);
 const savingApi = ref(false);
+const savingApiName = ref(false);
+const editingApiName = ref(false);
+const apiNameDraft = ref("");
+const apiNameInputRef = ref();
 const caseLoading = ref(false);
 const mockLoading = ref(false);
 const apiDrawer = ref(false);
@@ -517,6 +541,8 @@ const loadMocks = async () => {
   }
 };
 const selectApi = async (api: ApiDefinition) => {
+  editingApiName.value = false;
+  apiNameDraft.value = api.name || "";
   selectedApi.value = api;
   debugForm.method = api.method;
   debugForm.path = api.path;
@@ -533,6 +559,52 @@ const selectApi = async (api: ApiDefinition) => {
 const goCasePage = () => {
   if (!selectedApi.value) return;
   router.push({ path: "/api-testing/cases", query: { apiId: selectedApi.value.id } });
+};
+const startApiNameEdit = async () => {
+  if (!selectedApi.value) return;
+  apiNameDraft.value = selectedApi.value.name || "";
+  editingApiName.value = true;
+  await nextTick();
+  apiNameInputRef.value?.focus?.();
+};
+const blurApiNameInput = () => {
+  apiNameInputRef.value?.blur?.();
+};
+const cancelApiNameEdit = () => {
+  editingApiName.value = false;
+  apiNameDraft.value = selectedApi.value?.name || "";
+};
+const saveApiNameIfChanged = async () => {
+  if (!selectedApi.value || savingApiName.value) return;
+  const nextName = apiNameDraft.value.trim();
+  if (!nextName) {
+    ElMessage.warning("接口名称必填");
+    apiNameDraft.value = selectedApi.value.name || "";
+    editingApiName.value = false;
+    return;
+  }
+  if (nextName.length > 20) {
+    ElMessage.warning("接口名称不能超过20个字");
+    return;
+  }
+  if (nextName === selectedApi.value.name) {
+    editingApiName.value = false;
+    return;
+  }
+  const payload = buildCurrentApiPayload();
+  if (!payload) return;
+  savingApiName.value = true;
+  try {
+    const { data } = await platformApi.updateApiDefinition(selectedApi.value.id, { ...payload, name: nextName });
+    ElMessage.success("接口名称已保存");
+    selectedApi.value = data;
+    designForm.name = data.name;
+    const index = apis.value.findIndex((item) => item.id === data.id);
+    if (index >= 0) apis.value[index] = data;
+    editingApiName.value = false;
+  } finally {
+    savingApiName.value = false;
+  }
 };
 const openApiForm = () => {
   Object.assign(apiForm, {

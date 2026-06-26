@@ -19,14 +19,25 @@ export const useAuthStore = defineStore("auth", {
       localStorage.removeItem("ns_token");
       sessionStorage.removeItem("ns_token");
       const { data: cryptoConfig } = await accountApi.loginCrypto();
-      const passwordCipher = await encryptPassword(cryptoConfig.public_key, payload.password);
-      const { data } = await accountApi.login({
-        username: payload.username,
-        password_cipher: passwordCipher,
-        key_id: cryptoConfig.key_id,
-        nonce: cryptoConfig.nonce,
-        remember_me: payload.remember_me,
-      });
+      let loginPayload: Record<string, unknown>;
+      try {
+        const passwordCipher = await encryptPassword(cryptoConfig.public_key, payload.password);
+        loginPayload = {
+          username: payload.username,
+          password_cipher: passwordCipher,
+          key_id: cryptoConfig.key_id,
+          nonce: cryptoConfig.nonce,
+          remember_me: payload.remember_me,
+        };
+      } catch (error) {
+        if (!isLocalDebugHttp()) throw error;
+        loginPayload = {
+          username: payload.username,
+          password: payload.password,
+          remember_me: payload.remember_me,
+        };
+      }
+      const { data } = await accountApi.login(loginPayload);
       this.user = data.user;
       this.checked = true;
       return data;
@@ -53,3 +64,14 @@ export const useAuthStore = defineStore("auth", {
     },
   },
 });
+
+const isLocalDebugHttp = () => {
+  const host = window.location.hostname;
+  return window.location.protocol === "http:" && (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host.startsWith("192.168.") ||
+    host.startsWith("10.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  );
+};

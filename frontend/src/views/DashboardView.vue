@@ -74,7 +74,14 @@
         </div>
         <div class="design-card-body">
           <div class="quick-grid">
-            <button v-for="item in quickActions" :key="item.title" class="quick-item" :class="item.type" @click="$router.push(item.path)">
+            <button
+              v-for="item in quickActions"
+              :key="item.title"
+              class="quick-item"
+              :class="[item.type, { disabled: item.disabled }]"
+              :disabled="item.disabled"
+              @click="!item.disabled && $router.push(item.path)"
+            >
               <span class="quick-icon">{{ item.icon }}</span>
               <span>
                 <span class="quick-title">{{ item.title }}</span>
@@ -182,7 +189,7 @@ const platformCards = computed(() =>
 );
 
 const quickActions = computed(() => [
-  { type: "blue", icon: "⌁", title: "接口调试", desc: "调试单个 API 接口", path: "/api-debug" },
+  { type: "blue", icon: "⌁", title: "接口调试", desc: "旧版入口已停用", path: "", disabled: true },
   { type: "green", icon: "▶", title: "查看执行报告", desc: `查看全部 ${totalCases.value || 66} 个用例的执行结果`, path: "/reports" },
   { type: "amber", icon: "☑", title: "维护接口资产", desc: "新增、编辑接口定义", path: "/api-testing" },
   { type: "red", icon: "↗", title: "查看失败报告", desc: "定位断言与响应差异", path: "/reports" },

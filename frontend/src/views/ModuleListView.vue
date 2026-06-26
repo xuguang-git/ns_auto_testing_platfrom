@@ -96,22 +96,11 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="deleteVisible" title="确认删除模块" width="520px">
-      <div v-if="deleteTarget" class="cascade-box">
-        <p>确认删除 <b>{{ deleteTarget.name }}</b>？此操作不可恢复。</p>
-        <div class="cascade-tree">↳ 关联接口：{{ deleteTarget.api_count || 0 }} 个</div>
-        <p class="cascade-note">如存在子目录、接口或全局前置操作，后端会自动拦截删除。</p>
-      </div>
-      <template #footer>
-        <el-button @click="deleteVisible = false">取消</el-button>
-        <el-button type="danger" @click="deleteModule">确认删除</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
 
 import { platformApi, unwrapList } from "@/api/platform";
@@ -119,7 +108,6 @@ import { platformApi, unwrapList } from "@/api/platform";
 const loading = ref(false);
 const saving = ref(false);
 const formVisible = ref(false);
-const deleteVisible = ref(false);
 const platforms = ref<any[]>([]);
 const modules = ref<any[]>([]);
 const selectedPlatform = ref<number>();
@@ -127,7 +115,6 @@ const selectedModule = ref<number>();
 const expandedPlatforms = ref<number[]>([]);
 const expandedModules = ref<number[]>([]);
 const editingId = ref<number>();
-const deleteTarget = ref<any>();
 const form = reactive({ managed_platform: undefined as number | undefined, platform: "ERP", name: "", code: "", description: "", sort_order: 0, is_active: true });
 
 const filteredModules = computed(() => modules.value.filter((item) => (!selectedPlatform.value || item.managed_platform === selectedPlatform.value) && (!selectedModule.value || item.id === selectedModule.value)));
@@ -213,14 +200,10 @@ const saveModule = async () => {
     saving.value = false;
   }
 };
-const openDelete = (row: any) => {
-  deleteTarget.value = row;
-  deleteVisible.value = true;
-};
-const deleteModule = async () => {
-  await platformApi.deleteApiModule(deleteTarget.value.id);
+const openDelete = async (row: any) => {
+  await ElMessageBox.confirm(`确认删除模块「${row.name}」？`, "删除确认", { type: "warning" });
+  await platformApi.deleteApiModule(row.id);
   ElMessage.success("模块已删除");
-  deleteVisible.value = false;
   selectedModule.value = undefined;
   await load();
 };

@@ -11,10 +11,10 @@ env = environ.Env(
     ALLOWED_HOSTS=(list, ["127.0.0.1", "localhost"]),
     CORS_ALLOWED_ORIGINS=(list, ["http://localhost:5173"]),
     DB_NAME=(str, "ns_auto_testing"),
-    DB_USER=(str, "root"),
-    DB_PASSWORD=(str, "root"),
+    DB_USER=(str, "ns_auto_testing"),
+    DB_PASSWORD=(str, ""),
     DB_HOST=(str, "127.0.0.1"),
-    DB_PORT=(int, 3306),
+    DB_PORT=(int, 5432),
     REDIS_URL=(str, "redis://127.0.0.1:6379/1"),
     DJANGO_CACHE_URL=(str, "redis://127.0.0.1:6379/2"),
     CELERY_RESULT_EXPIRES=(int, 24 * 60 * 60),
@@ -92,13 +92,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.mysql",
+        "ENGINE": "django.db.backends.postgresql",
         "NAME": env("DB_NAME"),
         "USER": env("DB_USER"),
         "PASSWORD": env("DB_PASSWORD"),
         "HOST": env("DB_HOST"),
         "PORT": env("DB_PORT"),
-        "OPTIONS": {"charset": "utf8mb4"},
     }
 }
 

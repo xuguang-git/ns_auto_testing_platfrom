@@ -25,7 +25,6 @@ const routes: RouteRecordRaw[] = [
       { path: "test-tools", redirect: "/test-tools/quick-test" },
       { path: "test-tools/quick-test", name: "testToolsQuickTest", component: () => import("@/views/QuickApiTestView.vue") },
       { path: "test-tools/capabilities", name: "dataFactoryCapabilities", component: () => import("@/views/DataFactoryCapabilitiesView.vue") },
-      { path: "api-debug", name: "apiDebug", component: () => import("@/views/ApiDebugView.vue") },
       { path: "ui-testing", redirect: "/ui-testing/suites" },
       { path: "ui-testing/suites", name: "uiTestingSuites", component: () => import("@/views/UiTestingView.vue") },
       { path: "ui-testing/cases", name: "uiTestingCases", component: () => import("@/views/UiCasesView.vue") },
