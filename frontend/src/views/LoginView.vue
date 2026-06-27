@@ -31,6 +31,7 @@ import { ElMessage } from "element-plus";
 import { reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import { getFirstVisiblePath } from "@/router";
 import { useAuthStore } from "@/stores/auth";
 
 const router = useRouter();
@@ -47,7 +48,7 @@ const submit = async () => {
   loading.value = true;
   try {
     await auth.login(form);
-    await router.push((route.query.redirect as string) || "/dashboard");
+    await router.push((route.query.redirect as string) || getFirstVisiblePath());
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.non_field_errors?.[0] || error?.response?.data?.detail || "登录失败");
   } finally {

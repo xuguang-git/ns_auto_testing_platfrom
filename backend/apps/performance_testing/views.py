@@ -25,7 +25,7 @@ MAX_REPORT_INLINE_BYTES = 25 * 1024 * 1024
 
 
 class ExecutorCheckViewSet(viewsets.ViewSet):
-    permission_classes = [action_permission("run.execute")]
+    permission_classes = [action_permission("performance.execute")]
 
     def list(self, request):
         return response.Response(check_executor())
@@ -34,7 +34,7 @@ class ExecutorCheckViewSet(viewsets.ViewSet):
 class JMeterScriptViewSet(OperatorAuditModelViewSet):
     queryset = JMeterScript.objects.prefetch_related("tasks").all()
     serializer_class = JMeterScriptSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("performance.read", "performance.create", "performance.update", "performance.delete", "performance.execute")]
     filterset_fields = ["is_active"]
     search_fields = ["name", "description"]
     audit_module = "jmeter_script"
@@ -54,7 +54,7 @@ class JMeterScriptViewSet(OperatorAuditModelViewSet):
 class PerformanceTaskViewSet(OperatorAuditModelViewSet):
     queryset = PerformanceTask.objects.select_related("script").all()
     serializer_class = PerformanceTaskSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("performance.read", "performance.create", "performance.update", "performance.delete", "performance.execute")]
     filterset_fields = ["script", "is_active"]
     search_fields = ["name", "description", "script__name"]
     audit_module = "performance_task"
@@ -87,7 +87,7 @@ class PerformanceTaskViewSet(OperatorAuditModelViewSet):
 class PerformanceRunViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     queryset = PerformanceRun.objects.select_related("task", "task__script").all()
     serializer_class = PerformanceRunSerializer
-    permission_classes = [action_permission("run.read")]
+    permission_classes = [action_permission("performance.read")]
     filterset_fields = ["task", "status"]
     search_fields = ["task__name", "task__script__name", "celery_task_id"]
 

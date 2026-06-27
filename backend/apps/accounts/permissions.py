@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from apps.accounts.services import has_permission
@@ -27,13 +29,33 @@ class HasPermissionCode(BasePermission):
         return has_permission(request.user, code)
 
 
-def action_permission(read: str, write: str | None = None, delete: str | None = None):
+EXECUTE_ACTIONS = {"debug", "run", "run_now", "check", "validate_locator", "execute", "execute_now"}
+
+
+def _has_any_permission(user, codes) -> bool:
+    if isinstance(codes, str):
+        return has_permission(user, codes)
+    if isinstance(codes, Iterable):
+        return any(has_permission(user, code) for code in codes if code)
+    return False
+
+
+def action_permission(read, create=None, update=None, delete=None, execute=None):
     class ActionPermission(BasePermission):
         def has_permission(self, request, view):
             if request.method in SAFE_METHODS:
-                return has_permission(request.user, read)
+                return _has_any_permission(request.user, read)
             if request.method == "DELETE":
-                return has_permission(request.user, delete or write or read)
-            return has_permission(request.user, write or read)
+                return _has_any_permission(request.user, delete or update or create or read)
+            if request.method == "POST":
+                view_action = getattr(view, "action", "")
+                if view_action == "create":
+                    code = create
+                elif view_action in EXECUTE_ACTIONS:
+                    code = execute or update
+                else:
+                    code = update
+                return _has_any_permission(request.user, code or create or read)
+            return _has_any_permission(request.user, update or create or read)
 
     return ActionPermission

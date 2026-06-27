@@ -21,7 +21,13 @@
         <el-table :data="users" v-loading="loading" stripe>
           <el-table-column label="用户" min-width="180">
             <template #default="{ row }">
-              <div class="user-cell-mini"><span class="avatar-mini">{{ row.nickname?.[0] || row.username?.[0] }}</span><div><b>{{ row.nickname || row.username }}</b><em>@{{ row.username }}</em></div></div>
+              <div class="user-cell-mini">
+                <span class="avatar-mini">{{ row.nickname?.[0] || row.username?.[0] }}</span>
+                <div>
+                  <b>{{ row.nickname || row.username }}</b>
+                  <em>@{{ row.username }}</em>
+                </div>
+              </div>
             </template>
           </el-table-column>
           <el-table-column prop="role_name" label="角色" width="130" />
@@ -30,11 +36,13 @@
           <el-table-column prop="last_login" label="最后登录" width="180" />
           <el-table-column label="操作" width="260" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-              <el-button link @click="openReset(row)">重置密码</el-button>
-              <el-button v-if="row.status === 'active'" link class="danger-link" :disabled="row.username === 'admin'" @click="disableUser(row)">禁用</el-button>
-              <el-button v-else link type="primary" @click="enableUser(row)">启用</el-button>
-              <el-button link @click="forceLogout(row)">强制下线</el-button>
+              <template v-if="!row.is_protected">
+                <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+                <el-button link @click="openReset(row)">重置密码</el-button>
+                <el-button v-if="row.status === 'active'" link class="danger-link" @click="disableUser(row)">禁用</el-button>
+                <el-button v-else link type="primary" @click="enableUser(row)">启用</el-button>
+                <el-button link @click="forceLogout(row)">强制下线</el-button>
+              </template>
             </template>
           </el-table-column>
         </el-table>
@@ -46,10 +54,10 @@
         <el-form-item label="用户名" required><el-input v-model="form.username" :disabled="!!editingId" /></el-form-item>
         <el-form-item v-if="!editingId" label="初始密码" required><el-input v-model="form.password" type="password" show-password /></el-form-item>
         <el-form-item label="昵称" required><el-input v-model="form.nickname" /></el-form-item>
-        <el-form-item label="角色" required><el-select v-model="form.role" :disabled="isEditingAdmin" style="width:100%"><el-option v-for="role in roles" :key="role.id" :label="role.name" :value="role.id" /></el-select></el-form-item>
+        <el-form-item label="角色" required><el-select v-model="form.role" :disabled="isEditingProtected" style="width:100%"><el-option v-for="role in roles" :key="role.id" :label="role.name" :value="role.id" /></el-select></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item>
         <el-form-item label="手机号"><el-input v-model="form.phone" /></el-form-item>
-        <el-form-item label="状态"><el-switch v-model="form.enabled" :disabled="isEditingAdmin" active-text="启用" inactive-text="禁用" /></el-form-item>
+        <el-form-item label="状态"><el-switch v-model="form.enabled" :disabled="isEditingProtected" active-text="启用" inactive-text="禁用" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="formVisible=false">取消</el-button><el-button type="primary" :loading="saving" @click="saveUser">保存</el-button></template>
     </el-dialog>
@@ -80,7 +88,7 @@ const statusFilter = ref("");
 const formVisible = ref(false);
 const resetVisible = ref(false);
 const editingId = ref<number>();
-const isEditingAdmin = ref(false);
+const isEditingProtected = ref(false);
 const resetTarget = ref<any>();
 const resetPassword = ref("Admin123@");
 const form = reactive({ username: "", password: "Admin123@", nickname: "", role: undefined as number | undefined, email: "", phone: "", enabled: true });
@@ -101,17 +109,23 @@ const load = async () => {
 };
 const openCreate = () => {
   editingId.value = undefined;
-  isEditingAdmin.value = false;
+  isEditingProtected.value = false;
   Object.assign(form, { username: "", password: "Admin123@", nickname: "", role: roles.value[0]?.id, email: "", phone: "", enabled: true });
   formVisible.value = true;
 };
 const openEdit = (row: any) => {
+  if (row.is_protected) {
+    return;
+  }
   editingId.value = row.id;
-  isEditingAdmin.value = row.username === "admin";
+  isEditingProtected.value = !!row.is_protected;
   Object.assign(form, { username: row.username, password: "", nickname: row.nickname, role: row.role, email: row.email, phone: row.phone, enabled: row.status === "active" });
   formVisible.value = true;
 };
 const saveUser = async () => {
+  if (editingId.value && isEditingProtected.value) {
+    return;
+  }
   saving.value = true;
   try {
     const payload: any = { username: form.username, nickname: form.nickname, role: form.role, email: form.email, phone: form.phone, status: form.enabled ? "active" : "disabled", is_active: form.enabled };
@@ -126,15 +140,24 @@ const saveUser = async () => {
   }
 };
 const disableUser = async (row: any) => {
+  if (row.is_protected) {
+    return;
+  }
   await ElMessageBox.confirm(`确认禁用用户 ${row.username}？`, "禁用确认", { type: "warning" });
   await accountApi.disableUser(row.id);
   await load();
 };
 const enableUser = async (row: any) => {
+  if (row.is_protected) {
+    return;
+  }
   await accountApi.enableUser(row.id);
   await load();
 };
 const openReset = (row: any) => {
+  if (row.is_protected) {
+    return;
+  }
   resetTarget.value = row;
   resetPassword.value = "Admin123@";
   resetVisible.value = true;
@@ -145,6 +168,9 @@ const confirmReset = async () => {
   resetVisible.value = false;
 };
 const forceLogout = async (row: any) => {
+  if (row.is_protected) {
+    return;
+  }
   await accountApi.forceLogout(row.id);
   ElMessage.success("已强制下线");
 };

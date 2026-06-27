@@ -1,6 +1,34 @@
 from django.contrib import admin
+from django.contrib.admin.sites import NotRegistered
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from apps.accounts.models import AuditLog, LoginAttempt, Permission, Role, UserProfile, UserSession
+from apps.accounts.services import is_protected_user
+
+
+User = get_user_model()
+
+
+try:
+    admin.site.unregister(User)
+except NotRegistered:
+    pass
+
+
+@admin.register(User)
+class ProtectedUserAdmin(DjangoUserAdmin):
+    def has_delete_permission(self, request, obj=None):
+        if obj and is_protected_user(obj):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly_fields = list(super().get_readonly_fields(request, obj))
+        if obj and is_protected_user(obj):
+            model_fields = [field.name for field in obj._meta.fields]
+            return sorted(set(readonly_fields + model_fields + ["groups", "user_permissions"]))
+        return readonly_fields
 
 
 @admin.register(Permission)
