@@ -1,8 +1,10 @@
 from celery import shared_task
 from django.utils import timezone
+import json
 
 from apps.api_testing.models import ApiTestCase
 from apps.api_testing.services import execute_debug_request
+from apps.scheduling.models import ScheduledPlan
 from apps.scheduling.notification_services import dispatch_test_run_notifications
 from apps.test_runs.models import TestRun, TestRunStep
 
@@ -16,6 +18,7 @@ def run_api_suite(self, test_run_id: int) -> dict:
     test_run.started_at = timezone.now()
     test_run.logs = _append_log(test_run.logs, "info", f"测试套件开始执行：{test_run.suite.name}")
     test_run.save(update_fields=["status", "celery_task_id", "started_at", "logs", "updated_at"])
+    _update_schedule_result(test_run, "running")
 
     total = passed = failed = skipped = 0
     sort_order = 0
@@ -82,6 +85,7 @@ def run_api_suite(self, test_run_id: int) -> dict:
             for step in scenario.steps.filter(is_active=True):
                 total += 1
                 sort_order += 1
+                variables_before = _variable_snapshot(scenario_variables)
                 payload = {
                     "environment": test_run.environment_id or scenario.environment_id or run_config.get("environment"),
                     "variables": scenario_variables,
@@ -100,7 +104,8 @@ def run_api_suite(self, test_run_id: int) -> dict:
                     "timeout": timeout_seconds,
                 }
                 result = execute_debug_request(payload)
-                scenario_variables.update(result.get("variables") or {})
+                scenario_variables.update(result.get("runtime_variables") or result.get("variables") or {})
+                variables_after = _variable_snapshot(scenario_variables)
                 step_passed = bool(result.get("ok") and result.get("passed"))
                 if step_passed:
                     passed += 1
@@ -115,7 +120,11 @@ def run_api_suite(self, test_run_id: int) -> dict:
                     step_name=step.name,
                     status=status,
                     sort_order=sort_order,
-                    request=result.get("request") or {},
+                    request={
+                        **(result.get("request") or {}),
+                        "variables_before": variables_before,
+                        "variables_after": variables_after,
+                    },
                     response=result.get("response") or {},
                     assertions=result.get("assertions") or [],
                     logs=result.get("logs") or [],
@@ -164,14 +173,38 @@ def run_api_suite(self, test_run_id: int) -> dict:
             "updated_at",
         ]
     )
+    _update_schedule_result(test_run, _schedule_result_status(test_run))
     dispatch_test_run_notifications(test_run)
     return summary
+
+
+def _schedule_result_status(test_run: TestRun) -> str:
+    """按业务结果计算调度计划最近结果，有失败步骤时整体视为失败。"""
+    if test_run.status == TestRun.Status.FAILED:
+        return "failed"
+    return "failed" if int((test_run.summary or {}).get("failed") or 0) > 0 else "success"
+
+
+def _update_schedule_result(test_run: TestRun, status: str) -> None:
+    """回写调度计划最近执行结果，供调度计划列表直接展示。"""
+    if not test_run.schedule_id:
+        return
+    ScheduledPlan.objects.filter(pk=test_run.schedule_id).update(last_status=status)
 
 
 def _append_log(logs, level: str, message: str) -> list[dict]:
     items = list(logs or [])
     items.append({"time": timezone.now().isoformat(), "level": level, "message": message})
     return items[-500:]
+
+
+def _variable_snapshot(variables: dict) -> dict:
+    """复制一份可写入报告 JSON 的运行变量快照，便于排查场景步骤变量传递。"""
+    try:
+        json.dumps(variables, ensure_ascii=False)
+        return dict(variables)
+    except TypeError:
+        return json.loads(json.dumps(variables, ensure_ascii=False, default=str))
 
 
 def _mark_remaining_skipped(test_run, scenarios, current_scenario_id, current_step_id, sort_order: int) -> int:

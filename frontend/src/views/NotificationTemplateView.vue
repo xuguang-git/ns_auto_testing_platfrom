@@ -57,20 +57,14 @@
             </el-select>
           </el-form-item>
           <el-form-item label="标题模板" required>
-            <div class="rich-editor compact">
-              <div class="rich-toolbar">
-                <button type="button" @click="execTitle('bold')">B</button>
-                <button type="button" @click="execTitle('italic')">I</button>
-                <button type="button" @click="execTitle('underline')">U</button>
-              </div>
-              <div
-                ref="titleEditor"
-                class="rich-body title-body"
-                contenteditable="true"
-                @focus="activeEditor = 'title'"
-                @input="syncTitle"
-              ></div>
-            </div>
+            <el-input
+              ref="titleInput"
+              v-model="form.title_template"
+              maxlength="160"
+              show-word-limit
+              placeholder="例如：{{suite_name}} 执行{{status_text}}"
+              @focus="activeEditor = 'title'"
+            />
           </el-form-item>
           <el-form-item label="内容模板" required>
             <div class="rich-editor">
@@ -144,7 +138,7 @@ const statusFilter = ref("");
 const templates = ref<NotificationTemplate[]>([]);
 const channels = ref<NotificationChannel[]>([]);
 const variables = ref<Record<string, string>>({});
-const titleEditor = ref<HTMLElement>();
+const titleInput = ref();
 const contentEditor = ref<HTMLElement>();
 const activeEditor = ref<"title" | "content">("content");
 const form = reactive({
@@ -196,23 +190,11 @@ const openDialog = async (row?: NotificationTemplate) => {
   });
   dialogVisible.value = true;
   await nextTick();
-  if (titleEditor.value) titleEditor.value.innerHTML = form.title_template;
   if (contentEditor.value) contentEditor.value.innerHTML = form.content_template;
-};
-
-const syncTitle = () => {
-  form.title_template = titleEditor.value?.innerHTML || "";
 };
 
 const syncContent = () => {
   form.content_template = contentEditor.value?.innerHTML || "";
-};
-
-const execTitle = (command: string) => {
-  activeEditor.value = "title";
-  titleEditor.value?.focus();
-  document.execCommand(command);
-  syncTitle();
 };
 
 const execContent = (command: string) => {
@@ -223,17 +205,30 @@ const execContent = (command: string) => {
 };
 
 const insertVariable = (key: string) => {
-  const editor = activeEditor.value === "title" ? titleEditor.value : contentEditor.value;
-  editor?.focus();
+  if (activeEditor.value === "title") {
+    insertTitleVariable(key);
+    return;
+  }
+  contentEditor.value?.focus();
   document.execCommand("insertText", false, variableText(key));
-  syncTitle();
   syncContent();
 };
 
+const insertTitleVariable = (key: string) => {
+  const input = titleInput.value?.input as HTMLInputElement | undefined;
+  const text = variableText(key);
+  const start = input?.selectionStart ?? form.title_template.length;
+  const end = input?.selectionEnd ?? form.title_template.length;
+  form.title_template = `${form.title_template.slice(0, start)}${text}${form.title_template.slice(end)}`;
+  nextTick(() => {
+    input?.focus();
+    input?.setSelectionRange(start + text.length, start + text.length);
+  });
+};
+
 const save = async () => {
-  syncTitle();
   syncContent();
-  if (!form.name.trim() || !stripHtml(form.title_template) || !stripHtml(form.content_template) || !form.channel) {
+  if (!form.name.trim() || !form.title_template.trim() || !stripHtml(form.content_template) || !form.channel) {
     ElMessage.warning("请填写模板名称、消息通知、标题模板和内容模板");
     return;
   }
@@ -314,10 +309,6 @@ onMounted(async () => {
   overflow: auto;
 }
 
-.rich-editor.compact {
-  resize: none;
-}
-
 .rich-toolbar {
   display: flex;
   gap: 6px;
@@ -344,11 +335,6 @@ onMounted(async () => {
   outline: none;
   line-height: 1.7;
   color: #17233d;
-}
-
-.title-body {
-  min-height: 42px;
-  max-height: 96px;
 }
 
 .variable-panel {

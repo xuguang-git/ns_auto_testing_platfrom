@@ -11,7 +11,7 @@
           <el-button @click="parseCurlText">解析 curl</el-button>
           <el-button @click="openQuickCreate">快速新建</el-button>
           <el-button @click="openCapabilitySave">保存能力</el-button>
-          <el-button type="primary" :loading="sending" @click="send">Send</el-button>
+          <el-button type="primary" :loading="sending" @click="send">发送</el-button>
         </div>
       </div>
 
@@ -27,7 +27,7 @@
         </el-select>
       </div>
 
-      <el-tabs v-model="activeReqTab" class="quick-tabs">
+      <el-tabs v-model="activeReqTab" class="request-tabs quick-tabs">
         <el-tab-pane label="Headers" name="headers"><KeyValueEditor v-model="headers" /></el-tab-pane>
         <el-tab-pane label="Params" name="params"><KeyValueEditor v-model="params" /></el-tab-pane>
         <el-tab-pane label="Body" name="body">
@@ -44,7 +44,7 @@
         <strong>响应结果</strong>
         <span v-if="result" :class="responseStatusClass">{{ result.response?.status_code || "-" }} · {{ result.response?.elapsed_ms || "-" }}ms</span>
       </div>
-      <el-tabs v-model="activeRespTab">
+      <el-tabs v-model="activeRespTab" class="response-tabs">
         <el-tab-pane label="Body" name="body"><pre>{{ responseBodyText }}</pre></el-tab-pane>
         <el-tab-pane label="提取器" name="extractor">
           <div class="extractor-panel">
@@ -171,7 +171,7 @@ const KeyValueEditor = defineComponent({
           h("td", [h("input", { value: row.description, onInput: (e: Event) => update(index, "description", (e.target as HTMLInputElement).value) })]),
         ]))),
       ]),
-      h("button", { class: "add-row", onClick: add }, "+ Add row"),
+      h("button", { class: "add-row", type: "button", onClick: add }, "+ 新增字段"),
     ]);
   },
 });

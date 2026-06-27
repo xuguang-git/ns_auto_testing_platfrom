@@ -2,7 +2,7 @@
   <div class="case-debug-content">
     <header class="debug-head">
       <div>
-        <span class="muted">用例调试</span>
+        <span class="muted">{{ title }}</span>
         <h3>{{ caseName }}</h3>
         <p><span class="method-mini" :class="request.method">{{ request.method || "-" }}</span> {{ request.path || "-" }}</p>
       </div>
@@ -25,7 +25,7 @@
           <el-descriptions-item label="平台">{{ request.platform || "-" }}</el-descriptions-item>
           <el-descriptions-item label="环境">{{ environmentName }}</el-descriptions-item>
         </el-descriptions>
-        <el-tabs v-model="requestTab">
+        <el-tabs v-model="requestTab" class="request-tabs">
           <el-tab-pane label="Params" name="params"><KeyValuePreview :rows="request.query_params" /></el-tab-pane>
           <el-tab-pane label="Headers" name="headers"><KeyValuePreview :rows="request.headers" /></el-tab-pane>
           <el-tab-pane label="Body" name="body"><JsonPreview :value="request.body" empty-text="无请求体" /></el-tab-pane>
@@ -47,7 +47,7 @@
             <el-descriptions-item label="状态码">{{ responseStatus }}</el-descriptions-item>
             <el-descriptions-item label="耗时">{{ responseElapsed }}</el-descriptions-item>
           </el-descriptions>
-          <el-tabs v-model="responseTab">
+          <el-tabs v-model="responseTab" class="response-tabs">
             <el-tab-pane label="Body" name="body"><JsonPreview :value="responseBody" empty-text="无响应体" /></el-tab-pane>
             <el-tab-pane label="Headers" name="headers"><JsonPreview :value="responseHeaders" empty-text="无响应头" /></el-tab-pane>
             <el-tab-pane label="断言结果" name="assertions"><AssertionResultPreview :rows="assertionRows" /></el-tab-pane>
@@ -63,6 +63,7 @@
 import { computed, defineComponent, h, ref } from "vue";
 
 const props = defineProps<{
+  title?: string;
   caseName: string;
   request: Record<string, any>;
   result?: Record<string, any> | null;
@@ -78,6 +79,7 @@ defineEmits<{
 
 const requestTab = ref("params");
 const responseTab = ref("body");
+const title = computed(() => props.title || "用例调试");
 const environmentName = computed(() => props.environmentName || "-");
 const responseStatus = computed(() => props.result?.response?.status_code || "-");
 const responseElapsed = computed(() => props.result?.response?.elapsed_ms ? `${props.result.response.elapsed_ms}ms` : "-");

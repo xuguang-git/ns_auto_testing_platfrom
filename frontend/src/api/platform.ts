@@ -1,5 +1,5 @@
 import { http } from "@/api/http";
-import { getOrLoadResource } from "@/api/resourceCache";
+import { getOrLoadResource, invalidateResource } from "@/api/resourceCache";
 
 export interface ListResponse<T> {
   count: number;
@@ -39,6 +39,9 @@ export const platformApi = {
   updateEnvironmentRequestControl: (id: number, payload: Record<string, unknown>) => http.patch(`/environment-request-controls/${id}/`, payload),
   deleteEnvironmentRequestControl: (id: number) => http.delete(`/environment-request-controls/${id}/`),
   databaseConnections: (params?: Record<string, unknown>) => http.get("/database-connections/", { params }),
+  createDatabaseConnection: (payload: Record<string, unknown>) => http.post("/database-connections/", payload),
+  updateDatabaseConnection: (id: number, payload: Record<string, unknown>) => http.patch(`/database-connections/${id}/`, payload),
+  deleteDatabaseConnection: (id: number) => http.delete(`/database-connections/${id}/`),
   checkDatabaseConnection: (id: number) => http.post(`/database-connections/${id}/check/`),
   testDataSources: (params?: Record<string, unknown>) => http.get("/test-data-sources/", { params }),
   createTestDataSource: (payload: Record<string, unknown>) => http.post("/test-data-sources/", payload),
@@ -63,9 +66,9 @@ export const platformApi = {
   deleteApiMockRule: (id: number) => http.delete(`/api-mock-rules/${id}/`),
   apiModules: () => http.get("/api-modules/"),
   cachedApiModules: () => getOrLoadResource("platform:api-modules", async () => (await http.get("/api-modules/", { cache: false })).data),
-  createApiModule: (payload: Record<string, unknown>) => http.post("/api-modules/", payload),
-  updateApiModule: (id: number, payload: Record<string, unknown>) => http.patch(`/api-modules/${id}/`, payload),
-  deleteApiModule: (id: number) => http.delete(`/api-modules/${id}/`),
+  createApiModule: (payload: Record<string, unknown>) => withResourceInvalidation("platform:api-modules", http.post("/api-modules/", payload)),
+  updateApiModule: (id: number, payload: Record<string, unknown>) => withResourceInvalidation("platform:api-modules", http.patch(`/api-modules/${id}/`, payload)),
+  deleteApiModule: (id: number) => withResourceInvalidation("platform:api-modules", http.delete(`/api-modules/${id}/`)),
   apiSuites: (params?: Record<string, unknown>) => http.get("/api-suites/", { params }),
   cachedApiSuites: (params?: Record<string, unknown>) => getOrLoadResource(`platform:api-suites:${JSON.stringify(params || {})}`, async () => (await http.get("/api-suites/", { params, cache: false })).data),
   createApiSuite: (payload: Record<string, unknown>) => http.post("/api-suites/", payload),
@@ -80,6 +83,7 @@ export const platformApi = {
   updateApiStep: (id: number, payload: Record<string, unknown>) => http.patch(`/api-steps/${id}/`, payload),
   deleteApiStep: (id: number) => http.delete(`/api-steps/${id}/`),
   testRuns: () => http.get("/test-runs/", { cache: false }),
+  testRun: (id: number) => http.get(`/test-runs/${id}/`, { cache: false }),
   scheduledPlans: (params?: Record<string, unknown>) => http.get("/scheduled-plans/", { params, cache: false }),
   createScheduledPlan: (payload: Record<string, unknown>) => http.post("/scheduled-plans/", payload),
   updateScheduledPlan: (id: number, payload: Record<string, unknown>) => http.patch(`/scheduled-plans/${id}/`, payload),
@@ -134,4 +138,10 @@ export const platformApi = {
   deleteUiAction: (id: number) => http.delete(`/ui-actions/${id}/`),
   runUiCase: (id: number, payload?: Record<string, unknown>) => http.post(`/ui-cases/${id}/run/`, payload || {}, { timeout: 120000 }),
   debugApi: (payload: Record<string, unknown>) => http.post("/api-definitions/debug/", payload),
+};
+
+const withResourceInvalidation = async <T>(key: string, request: Promise<T>) => {
+  const response = await request;
+  invalidateResource(key);
+  return response;
 };

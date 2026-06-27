@@ -77,7 +77,6 @@
           </el-table-column>
           <el-table-column label="操作" width="210" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="goDebug(row)">调试</el-button>
               <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
               <el-button link class="danger-link" @click="removeApi(row)">删除</el-button>
             </template>
@@ -130,7 +129,6 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
 
 import { platformApi, unwrapList } from "@/api/platform";
 
@@ -151,7 +149,6 @@ interface ApiDefinition {
   assertions?: unknown[];
 }
 
-const router = useRouter();
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const loading = ref(false);
 const saving = ref(false);
@@ -341,9 +338,5 @@ const removeApi = async (row: ApiDefinition) => {
   ElMessage.success("接口已删除");
   await load();
 };
-const goDebug = (row: ApiDefinition) => {
-  router.push({ path: "/api-debug", query: { apiId: row.id } });
-};
-
 onMounted(load);
 </script>

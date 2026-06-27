@@ -23,11 +23,15 @@
             <span class="badge" :class="row.is_active ? 'badge-success' : 'badge-warning'">{{ row.is_active ? "启用" : "停用" }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="next_run_at" label="下次运行" min-width="170" />
-        <el-table-column prop="last_run_at" label="最近运行" min-width="170" />
+        <el-table-column label="下次运行" min-width="170">
+          <template #default="{ row }">{{ formatDateTime(row.next_run_at) }}</template>
+        </el-table-column>
+        <el-table-column label="最近运行" min-width="170">
+          <template #default="{ row }">{{ formatDateTime(row.last_run_at) }}</template>
+        </el-table-column>
         <el-table-column label="最近结果" width="110">
           <template #default="{ row }">
-            <span class="badge" :class="statusBadge(row.last_status)">{{ row.last_status || "-" }}</span>
+            <span class="badge" :class="statusBadge(row.last_status)">{{ lastStatusText(row.last_status) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="run_count" label="次数" width="80" />
@@ -178,10 +182,27 @@ const filteredSchedules = computed(() => schedules.value.filter((item) => {
 }));
 
 const statusBadge = (status?: string) => {
-  if (status === "completed" || status === "passed") return "badge-success";
+  if (status === "success" || status === "completed" || status === "passed") return "badge-success";
   if (status === "failed") return "badge-danger";
   if (status === "running" || status === "pending") return "badge-warning";
   return "badge-gray";
+};
+
+const lastStatusText = (status?: string) => ({
+  success: "成功",
+  failed: "失败",
+  running: "执行中",
+  pending: "待执行",
+  completed: "完成",
+  passed: "通过",
+}[status || ""] || "-");
+
+const formatDateTime = (value?: string) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).replace("T", " ").slice(0, 19);
+  const pad = (item: number) => String(item).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 };
 
 const loadSchedules = async (showLoading = true) => {

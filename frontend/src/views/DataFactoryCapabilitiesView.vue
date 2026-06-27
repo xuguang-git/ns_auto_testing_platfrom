@@ -88,7 +88,7 @@
             <el-input v-model="editForm.path" placeholder="请求 URL 或 Path" />
           </div>
 
-          <el-tabs v-model="editTab">
+          <el-tabs v-model="editTab" class="request-tabs">
             <el-tab-pane label="Headers" name="headers"><KeyValueEditor v-model="editHeaders" /></el-tab-pane>
             <el-tab-pane label="Params" name="params"><KeyValueEditor v-model="editParams" /></el-tab-pane>
             <el-tab-pane label="Body" name="body">
@@ -175,7 +175,7 @@ const KeyValueEditor = defineComponent({
           h("td", [h("input", { value: row.description, onInput: (e: Event) => update(index, "description", (e.target as HTMLInputElement).value) })]),
         ]))),
       ]),
-      h("button", { class: "add-row", onClick: add }, "+ Add row"),
+      h("button", { class: "add-row", type: "button", onClick: add }, "+ 新增字段"),
     ]);
   },
 });

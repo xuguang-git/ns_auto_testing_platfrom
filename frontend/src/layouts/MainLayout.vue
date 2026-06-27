@@ -4,7 +4,6 @@
       <RouterLink class="brand" to="/dashboard">
         <span class="brand-mark brand-image"><img src="/system-icon.jpg" alt="NS" /></span>
         <span class="brand-name">NS-ATP</span>
-        <span class="brand-version">v2.0</span>
       </RouterLink>
 
       <nav class="side-nav grouped-nav">
@@ -55,9 +54,9 @@
         <div class="breadcrumb">{{ activeItem.section }} / <span>{{ activeItem.label }}</span></div>
         <div class="header-tools">
           <RouterLink class="dashboard-link" to="/dashboard">控制台</RouterLink>
-          <div class="header-env">
+          <div class="header-env disabled" title="全局环境切换暂未接入业务执行链路">
             <span class="dot"></span>
-            <el-select v-model="currentEnv" class="env-switcher" size="small" teleported>
+            <el-select v-model="currentEnv" class="env-switcher" size="small" teleported disabled>
               <el-option label="测试环境" value="test" />
               <el-option label="开发环境" value="dev" />
               <el-option label="预发环境" value="staging" />
@@ -93,6 +92,7 @@ interface NavItem {
   path: string;
   icon: string;
   section: string;
+  permission?: string;
   tag?: string;
   disabled?: boolean;
   disabledReason?: string;
@@ -102,6 +102,7 @@ interface NavGroup {
   key: string;
   label: string;
   icon: string;
+  permission?: string;
   items: NavItem[];
 }
 
@@ -136,81 +137,96 @@ const icons = {
   chevron: svg('<polyline points="6 9 12 15 18 9"/>'),
 };
 
-const navGroups: NavGroup[] = [
+const baseNavGroups: NavGroup[] = [
   {
     key: "platform",
     label: "平台管理",
     icon: icons.groupPlatform,
+    permission: "page.platform",
     items: [
-      { label: "平台维护", path: "/platforms", icon: icons.platform, section: "平台管理" },
-      { label: "模块管理", path: "/modules", icon: icons.module, section: "平台管理" },
-      { label: "环境管理", path: "/projects", icon: icons.environment, section: "平台管理" },
+      { label: "平台维护", path: "/platforms", icon: icons.platform, section: "平台管理", permission: "page.platform.maintenance" },
+      { label: "模块管理", path: "/modules", icon: icons.module, section: "平台管理", permission: "page.platform.module" },
+      { label: "环境管理", path: "/projects", icon: icons.environment, section: "平台管理", permission: "page.platform.environment" },
     ],
   },
   {
     key: "api",
     label: "接口测试",
     icon: icons.groupApi,
+    permission: "page.api_testing",
     items: [
-      { label: "接口管理", path: "/api-testing/apis", icon: icons.api, section: "接口测试" },
-      { label: "测试用例", path: "/api-testing/cases", icon: icons.case, section: "接口测试" },
-      { label: "自动化测试", path: "/api-testing/automation", icon: icons.automation, section: "接口测试" },
+      { label: "接口管理", path: "/api-testing/apis", icon: icons.api, section: "接口测试", permission: "page.api_testing.api" },
+      { label: "测试用例", path: "/api-testing/cases", icon: icons.case, section: "接口测试", permission: "page.api_testing.case" },
+      { label: "自动化测试", path: "/api-testing/automation", icon: icons.automation, section: "接口测试", permission: "page.api_testing.automation" },
     ],
   },
   {
     key: "tools",
     label: "数据工厂",
     icon: icons.quick,
+    permission: "page.data_factory",
     items: [
-      { label: "快速测试", path: "/test-tools/quick-test", icon: icons.quick, section: "数据工厂" },
-      { label: "能力列表", path: "/test-tools/capabilities", icon: icons.case, section: "数据工厂" },
+      { label: "快速测试", path: "/test-tools/quick-test", icon: icons.quick, section: "数据工厂", permission: "page.data_factory.quick_test" },
+      { label: "能力列表", path: "/test-tools/capabilities", icon: icons.case, section: "数据工厂", permission: "page.data_factory.capability" },
     ],
   },
   {
     key: "ui",
     label: "UI测试",
     icon: icons.groupUi,
+    permission: "page.ui_testing",
     items: [
-      { label: "测试套件", path: "/ui-testing/suites", icon: icons.ui, section: "UI测试" },
-      { label: "测试用例", path: "/ui-testing/cases", icon: icons.case, section: "UI测试" },
-      { label: "定位元素", path: "/ui-testing/elements", icon: icons.case, section: "UI测试" },
+      { label: "测试套件", path: "/ui-testing/suites", icon: icons.ui, section: "UI测试", permission: "page.ui_testing.suite" },
+      { label: "测试用例", path: "/ui-testing/cases", icon: icons.case, section: "UI测试", permission: "page.ui_testing.case" },
+      { label: "定位元素", path: "/ui-testing/elements", icon: icons.case, section: "UI测试", permission: "page.ui_testing.element" },
     ],
   },
   {
     key: "performance",
     label: "性能测试",
     icon: icons.performance,
+    permission: "page.performance",
     items: [
-      { label: "性能测试", path: "/performance-testing", icon: icons.performance, section: "性能测试", disabled: true, tag: "暂不可用", disabledReason: "性能测试功能暂未开放" },
+      { label: "性能测试", path: "/performance-testing", icon: icons.performance, section: "性能测试", permission: "page.performance.testing", disabled: true, tag: "暂不可用", disabledReason: "性能测试功能暂未开放" },
     ],
   },
   {
     key: "user",
     label: "权限管理",
     icon: icons.groupUser,
+    permission: "page.permission",
     items: [
-      { label: "用户管理", path: "/users", icon: icons.user, section: "权限管理" },
-      { label: "角色管理", path: "/roles", icon: icons.role, section: "权限管理" },
-      { label: "审计日志", path: "/audit-logs", icon: icons.audit, section: "权限管理" },
+      { label: "用户管理", path: "/users", icon: icons.user, section: "权限管理", permission: "page.permission.user" },
+      { label: "角色管理", path: "/roles", icon: icons.role, section: "权限管理", permission: "page.permission.role" },
+      { label: "审计日志", path: "/audit-logs", icon: icons.audit, section: "权限管理", permission: "page.permission.audit" },
     ],
   },
   {
     key: "config",
     label: "配置管理",
     icon: icons.groupConfig,
+    permission: "page.config",
     items: [
-      { label: "测试报告", path: "/reports", icon: icons.report, section: "配置管理" },
-      { label: "调度计划", path: "/scheduling", icon: icons.schedule, section: "配置管理" },
-      { label: "消息通知", path: "/notifications", icon: icons.notification, section: "配置管理" },
-      { label: "消息模板", path: "/notification-templates", icon: icons.report, section: "配置管理" },
-      { label: "数据库管理", path: "/database-management", icon: icons.database, section: "配置管理" },
+      { label: "测试报告", path: "/reports", icon: icons.report, section: "配置管理", permission: "page.config.report" },
+      { label: "调度计划", path: "/scheduling", icon: icons.schedule, section: "配置管理", permission: "page.config.schedule" },
+      { label: "消息通知", path: "/notifications", icon: icons.notification, section: "配置管理", permission: "page.config.notification" },
+      { label: "消息模板", path: "/notification-templates", icon: icons.report, section: "配置管理", permission: "page.config.notification_template" },
+      { label: "数据库管理", path: "/database-management", icon: icons.database, section: "配置管理", permission: "page.config.database" },
     ],
   },
 ];
 
-const collapsedGroups = ref(navGroups.map((group) => group.key));
-const allItems = navGroups.flatMap((group) => group.items);
-const activeItem = computed(() => allItems.find((item) => item.path === route.path) || { label: "控制台", section: "首页" });
+const canViewPage = (permission?: string) => !permission || auth.has(permission);
+const navGroups = computed(() => baseNavGroups
+  .map((group) => {
+    const items = group.items.filter((item) => canViewPage(item.permission));
+    if (!canViewPage(group.permission) && items.length === 0) return null;
+    return { ...group, items };
+  })
+  .filter((group): group is NavGroup => Boolean(group)));
+const collapsedGroups = ref(baseNavGroups.map((group) => group.key));
+const allItems = computed(() => navGroups.value.flatMap((group) => group.items));
+const activeItem = computed(() => allItems.value.find((item) => item.path === route.path) || { label: "控制台", section: "首页" });
 const userInitial = computed(() => (auth.user?.nickname || auth.user?.username || "U").slice(0, 1).toUpperCase());
 
 const toggleGroup = (key: string) => {

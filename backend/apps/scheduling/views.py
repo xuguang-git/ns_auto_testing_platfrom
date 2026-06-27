@@ -26,7 +26,7 @@ def is_schedule_active(schedule: ScheduledPlan) -> bool:
 class NotificationChannelViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = NotificationChannel.objects.prefetch_related("scheduled_plans", "templates", "send_logs").all()
     serializer_class = NotificationChannelSerializer
-    permission_classes = [action_permission("schedule.read", "schedule.write", "schedule.delete")]
+    permission_classes = [action_permission(("notification.read", "schedule.read"), "notification.create", "notification.update", "notification.delete")]
     filterset_fields = ["notification_type", "push_platform", "is_active"]
     search_fields = ["name"]
     ordering_fields = ["created_at", "updated_at"]
@@ -46,7 +46,7 @@ class NotificationChannelViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class NotificationTemplateViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = NotificationTemplate.objects.select_related("channel").prefetch_related("scheduled_plans", "send_logs").all()
     serializer_class = NotificationTemplateSerializer
-    permission_classes = [action_permission("schedule.read", "schedule.write", "schedule.delete")]
+    permission_classes = [action_permission(("notification_template.read", "schedule.read"), "notification_template.create", "notification_template.update", "notification_template.delete")]
     filterset_fields = ["biz_type", "channel", "is_active"]
     search_fields = ["name"]
     ordering_fields = ["created_at", "updated_at"]
@@ -69,7 +69,7 @@ class NotificationTemplateViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class NotificationSendLogViewSet(OperatorAuditModelViewSet):
     queryset = NotificationSendLog.objects.select_related("channel", "template", "schedule", "test_run").all()
     serializer_class = NotificationSendLogSerializer
-    permission_classes = [action_permission("schedule.read")]
+    permission_classes = [action_permission(("notification.read", "schedule.read"))]
     http_method_names = ["get", "head", "options"]
     filterset_fields = ["status", "channel", "template", "schedule", "test_run"]
     search_fields = ["title", "error_message"]
@@ -84,7 +84,7 @@ class ScheduledPlanViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
         .all()
     )
     serializer_class = ScheduledPlanSerializer
-    permission_classes = [action_permission("schedule.read", "schedule.write", "schedule.delete")]
+    permission_classes = [action_permission("schedule.read", "schedule.create", "schedule.update", "schedule.delete", "schedule.execute")]
     filterset_fields = ["suite", "environment", "is_active", "last_status"]
     search_fields = ["name", "cron", "suite__name"]
     ordering_fields = ["next_run_at", "last_run_at", "created_at", "updated_at"]

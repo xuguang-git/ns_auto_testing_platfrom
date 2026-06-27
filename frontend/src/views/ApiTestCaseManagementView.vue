@@ -209,7 +209,7 @@
                 <el-option v-for="source in activeTestDataSources" :key="source.id" :label="source.name" :value="source.id" />
               </el-select>
             </div>
-            <el-tabs v-model="debugReqTab">
+            <el-tabs v-model="debugReqTab" class="request-tabs">
               <el-tab-pane label="Params" name="params">
                 <div class="variable-hint" v-pre>变量引用：在 Value 中使用 {{变量名}}；发送时先取当前环境全局变量，再用当前接口平台变量覆盖同名变量。</div>
                 <KeyValueEditor v-model="paramsRows" />
@@ -225,10 +225,10 @@
               <el-tab-pane label="Auth" name="auth">
                 <div class="inline-form">
                   <el-select v-model="authType">
-                    <el-option label="No Auth" value="none" />
-                    <el-option label="Bearer Token" value="bearer" />
-                    <el-option label="Basic Auth" value="basic" />
-                    <el-option label="API Key" value="api_key" />
+                    <el-option label="不使用认证" value="none" />
+                    <el-option label="Bearer 令牌" value="bearer" />
+                    <el-option label="基础认证" value="basic" />
+                    <el-option label="API 密钥" value="api_key" />
                   </el-select>
                   <el-input v-model="authToken" placeholder="{{token}}" />
                 </div>
@@ -279,7 +279,7 @@
               <strong>响应结果</strong>
               <span v-if="debugResult" :class="responseStatusClass">{{ debugResult.response?.status_code || "-" }} · {{ debugResult.response?.elapsed_ms || "-" }}ms</span>
             </div>
-            <el-tabs v-model="debugRespTab">
+            <el-tabs v-model="debugRespTab" class="response-tabs">
               <el-tab-pane label="Body" name="body"><pre>{{ responseBodyText }}</pre></el-tab-pane>
               <el-tab-pane label="Headers" name="headers"><pre>{{ responseHeadersText }}</pre></el-tab-pane>
               <el-tab-pane label="提取器" name="extractor">
@@ -422,7 +422,7 @@ const KeyValueEditor = defineComponent({
           h("td", [h("button", { class: "kv-remove-row", type: "button", title: "删除字段", onClick: () => remove(index) }, "-")]),
         ]))),
       ]),
-      h("button", { class: "add-row", onClick: add }, "+ Add row"),
+      h("button", { class: "add-row", type: "button", onClick: add }, "+ 新增字段"),
     ]);
   },
 });
