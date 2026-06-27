@@ -13,7 +13,7 @@ from apps.ui_testing.services import run_ui_case, validate_ui_element
 class UiSuiteViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = UiSuite.objects.select_related("project").all()
     serializer_class = UiSuiteSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission(("ui_suite.read", "ui_case.read", "ui_element.read"), "ui_suite.create", "ui_suite.update", "ui_suite.delete", "ui_suite.execute")]
     filterset_fields = ["project"]
     search_fields = ["name", "description"]
     audit_module = "ui_suite"
@@ -38,7 +38,7 @@ class UiSuiteViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class UiCaseViewSet(OperatorAuditModelViewSet):
     queryset = UiCase.objects.select_related("suite", "suite__project").prefetch_related("suites", "elements").all()
     serializer_class = UiCaseSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission(("ui_case.read", "ui_suite.read"), "ui_case.create", "ui_case.update", "ui_case.delete", "ui_case.execute")]
     filterset_fields = ["suite", "browser", "is_active"]
     search_fields = ["name", "start_url"]
     ordering_fields = ["sort_order", "created_at", "updated_at"]
@@ -60,7 +60,7 @@ class UiCaseViewSet(OperatorAuditModelViewSet):
 class UiElementViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = UiElement.objects.select_related("suite", "page_node").all()
     serializer_class = UiElementSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission(("ui_element.read", "ui_case.read", "ui_suite.read"), "ui_element.create", "ui_element.update", "ui_element.delete", "ui_element.execute")]
     filterset_fields = ["suite", "page_node", "locator_type", "is_active"]
     search_fields = ["name", "page", "page_node__name", "selector", "description"]
     audit_module = "ui_element"
@@ -78,7 +78,7 @@ class UiElementViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class UiPageViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = UiPage.objects.select_related("suite", "parent").prefetch_related("children", "elements").all()
     serializer_class = UiPageSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("ui_element.read", "ui_element.create", "ui_element.update", "ui_element.delete")]
     filterset_fields = ["suite", "parent", "is_active"]
     search_fields = ["name", "path", "description"]
     audit_module = "ui_page"
@@ -92,7 +92,7 @@ class UiPageViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class UiActionViewSet(OperatorAuditModelViewSet):
     queryset = UiAction.objects.all()
     serializer_class = UiActionSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("ui_case.read", "ui_case.create", "ui_case.update", "ui_case.delete")]
     filterset_fields = ["action", "is_active"]
     search_fields = ["name", "description"]
     audit_module = "ui_action"

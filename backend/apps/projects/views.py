@@ -26,7 +26,7 @@ from apps.projects.services import get_default_project
 class ProjectViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
-    permission_classes = [action_permission("platform.read", "platform.write", "platform.delete")]
+    permission_classes = [action_permission("platform.read", "platform.create", "platform.update", "platform.delete")]
     search_fields = ["name", "code"]
     ordering_fields = ["name", "created_at", "updated_at"]
 
@@ -46,7 +46,7 @@ class ProjectViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class PlatformViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = Platform.objects.prefetch_related("api_modules").all()
     serializer_class = PlatformSerializer
-    permission_classes = [action_permission("platform.read", "platform.write", "platform.delete")]
+    permission_classes = [action_permission("platform.read", "platform.create", "platform.update", "platform.delete")]
     filterset_fields = ["is_active"]
     search_fields = ["name", "code", "description"]
     ordering_fields = ["sort_order", "created_at", "updated_at"]
@@ -86,7 +86,7 @@ class PlatformViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class EnvironmentViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = Environment.objects.select_related("project").prefetch_related("variable_items", "pre_request_operations__modules", "request_controls").all()
     serializer_class = EnvironmentSerializer
-    permission_classes = [action_permission("environment.read", "environment.write", "environment.delete")]
+    permission_classes = [action_permission("environment.read", "environment.create", "environment.update", "environment.delete")]
     filterset_fields = ["project", "env_type", "is_default", "is_readonly"]
     search_fields = ["name", "base_url"]
     audit_module = "environment"
@@ -112,7 +112,7 @@ class EnvironmentViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class EnvironmentVariableViewSet(OperatorAuditModelViewSet):
     queryset = EnvironmentVariable.objects.select_related("environment", "environment__project").all()
     serializer_class = EnvironmentVariableSerializer
-    permission_classes = [action_permission("environment.read", "environment.write", "environment.delete")]
+    permission_classes = [action_permission("environment.read", "environment.create", "environment.update", "environment.delete")]
     filterset_fields = ["environment", "platform", "is_secret", "is_enabled"]
     search_fields = ["key", "description"]
     audit_module = "environment_variable"
@@ -121,7 +121,7 @@ class EnvironmentVariableViewSet(OperatorAuditModelViewSet):
 class EnvironmentPreRequestOperationViewSet(OperatorAuditModelViewSet):
     queryset = EnvironmentPreRequestOperation.objects.select_related("environment", "environment__project").prefetch_related("modules").all()
     serializer_class = EnvironmentPreRequestOperationSerializer
-    permission_classes = [action_permission("environment.read", "environment.write", "environment.delete")]
+    permission_classes = [action_permission("environment.read", "environment.create", "environment.update", "environment.delete")]
     filterset_fields = ["environment", "is_enabled"]
     search_fields = ["name"]
     audit_module = "environment_pre_request"
@@ -130,7 +130,7 @@ class EnvironmentPreRequestOperationViewSet(OperatorAuditModelViewSet):
 class EnvironmentRequestControlViewSet(OperatorAuditModelViewSet):
     queryset = EnvironmentRequestControl.objects.select_related("environment", "environment__project").all()
     serializer_class = EnvironmentRequestControlSerializer
-    permission_classes = [action_permission("environment.request_control.read", "environment.request_control.write", "environment.request_control.delete")]
+    permission_classes = [action_permission("environment.request_control.read", "environment.request_control.create", "environment.request_control.update", "environment.request_control.delete")]
     filterset_fields = ["environment", "is_enabled"]
     search_fields = ["name", "description"]
     audit_module = "environment_request_control"
@@ -152,7 +152,7 @@ class EnvironmentRequestControlViewSet(OperatorAuditModelViewSet):
 class DatabaseConnectionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = DatabaseConnection.objects.select_related("environment", "created_by", "updated_by").all()
     serializer_class = DatabaseConnectionSerializer
-    permission_classes = [action_permission("environment.read", "environment.write", "environment.delete")]
+    permission_classes = [action_permission("database.read", "database.create", "database.update", "database.delete", "database.execute")]
     filterset_fields = ["environment", "db_type", "is_active", "last_check_status"]
     search_fields = ["name", "description"]
     audit_module = "database_connection"
@@ -169,7 +169,7 @@ class DatabaseConnectionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class DataFactoryCapabilityViewSet(OperatorAuditModelViewSet):
     queryset = DataFactoryCapability.objects.select_related("environment", "created_by").all()
     serializer_class = DataFactoryCapabilitySerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("capability.read", "capability.create", "capability.update", "capability.delete", "capability.execute")]
     filterset_fields = ["platform", "environment", "is_active"]
     search_fields = ["name", "description", "path"]
     audit_module = "data_factory"
@@ -178,7 +178,7 @@ class DataFactoryCapabilityViewSet(OperatorAuditModelViewSet):
 class TestDataSourceViewSet(OperatorAuditModelViewSet):
     queryset = TestDataSource.objects.select_related("project", "environment", "database_connection", "created_by", "updated_by").all()
     serializer_class = TestDataSourceSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission(("database.read", "automation.read", "api_case.read"), "database.create", "database.update", "database.delete", "database.execute")]
     filterset_fields = ["project", "environment", "database_connection", "source_type", "is_active"]
     search_fields = ["name", "description", "sql"]
     audit_module = "test_data_source"

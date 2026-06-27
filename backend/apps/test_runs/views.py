@@ -10,6 +10,6 @@ class TestRunViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = TestRun.objects.select_related("suite", "suite__project", "environment").prefetch_related("steps").all()
     serializer_class = TestRunSerializer
-    permission_classes = [action_permission("run.read")]
+    permission_classes = [action_permission(("report.read", "run.read"))]
     filterset_fields = ["suite", "status", "trigger_type", "environment"]
     search_fields = ["suite__name", "celery_task_id"]

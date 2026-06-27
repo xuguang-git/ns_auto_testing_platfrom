@@ -16,11 +16,11 @@ export const accountApi = {
   disableUser: (id: number) => http.post(`/users/${id}/disable/`),
   resetPassword: (id: number, payload: Record<string, unknown>) => http.post(`/users/${id}/reset-password/`, payload),
   forceLogout: (id: number) => http.post(`/users/${id}/force-logout/`),
-  roles: (params?: Record<string, unknown>) => http.get("/roles/", { params }),
+  roles: (params?: Record<string, unknown>) => http.get("/roles/", { params, cache: false }),
   createRole: (payload: Record<string, unknown>) => http.post("/roles/", payload),
   updateRole: (id: number, payload: Record<string, unknown>) => http.patch(`/roles/${id}/`, payload),
   deleteRole: (id: number) => http.delete(`/roles/${id}/`),
-  permissions: () => http.get("/permissions/"),
+  permissions: () => http.get("/permissions/", { cache: false }),
   auditLogs: (params?: Record<string, unknown>) => http.get("/audit-logs/", { params }),
   loginAttempts: (params?: Record<string, unknown>) => http.get("/login-attempts/", { params }),
 };

@@ -4,7 +4,16 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.accounts.models import AuditLog, LoginAttempt, Permission, Role, UserProfile, UserSession
-from apps.accounts.services import ensure_builtin_roles, ensure_profile, validate_password_policy
+from apps.accounts.services import (
+    ALL_PERMISSION_CODES,
+    assert_user_manageable,
+    ensure_builtin_roles,
+    ensure_profile,
+    is_protected_user,
+    is_protected_username,
+    protected_user_security_fix,
+    validate_password_policy,
+)
 
 
 User = get_user_model()
@@ -13,7 +22,19 @@ User = get_user_model()
 class PermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Permission
-        fields = ["id", "code", "module", "action", "name", "description"]
+        fields = [
+            "id",
+            "code",
+            "module",
+            "action",
+            "name",
+            "description",
+            "type",
+            "parent",
+            "route_path",
+            "is_visible",
+            "sort_order",
+        ]
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -72,6 +93,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer(read_only=True)
+    is_protected = serializers.SerializerMethodField()
     role = serializers.PrimaryKeyRelatedField(source="profile.role", queryset=Role.objects.all(), required=False, allow_null=True)
     role_name = serializers.CharField(source="profile.role.name", read_only=True)
     role_code = serializers.CharField(source="profile.role.code", read_only=True)
@@ -94,6 +116,7 @@ class UserSerializer(serializers.ModelSerializer):
             "is_active",
             "is_staff",
             "is_superuser",
+            "is_protected",
             "last_login",
             "date_joined",
             "profile",
@@ -106,24 +129,34 @@ class UserSerializer(serializers.ModelSerializer):
             "status",
             "wechat_work_id",
         ]
-        read_only_fields = ["id", "last_login", "date_joined", "is_staff", "is_superuser", "profile"]
+        read_only_fields = ["id", "last_login", "date_joined", "is_staff", "is_superuser", "is_protected", "profile"]
         extra_kwargs = {"username": {"required": True}}
+
+    def get_is_protected(self, obj):
+        return is_protected_user(obj)
+
+    def validate_username(self, value):
+        if not self.instance and is_protected_username(value):
+            raise serializers.ValidationError("系统保护账号不允许通过用户管理创建")
+        return value
 
     def validate_password(self, value):
         validate_password_policy(value)
         return value
 
     def validate(self, attrs):
-        if self.instance and self.instance.username == "admin":
+        if self.instance and is_protected_user(self.instance):
+            if not self.context.get("allow_protected_profile_update"):
+                assert_user_manageable(self.instance, "编辑")
             profile_data = attrs.get("profile", {})
             if "role" in profile_data:
                 super_role = Role.objects.filter(code=Role.BuiltinCode.SUPER_ADMIN).first()
                 if super_role and profile_data["role"] and profile_data["role"].id != super_role.id:
-                    raise serializers.ValidationError({"role": "admin 用户必须保持超级管理员角色"})
+                    raise serializers.ValidationError({"role": "系统保护账号必须保持超级管理员角色"})
             if profile_data.get("status") and profile_data["status"] != UserProfile.Status.ACTIVE:
-                raise serializers.ValidationError({"status": "admin 用户不可禁用或锁定"})
+                raise serializers.ValidationError({"status": "系统保护账号不可禁用或锁定"})
             if attrs.get("is_active") is False:
-                raise serializers.ValidationError({"is_active": "admin 用户不可禁用"})
+                raise serializers.ValidationError({"is_active": "系统保护账号不可禁用"})
         return attrs
 
     @transaction.atomic
@@ -155,22 +188,26 @@ class UserSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         if password:
             instance.set_password(password)
-        instance.save()
-        profile = ensure_profile(instance)
-        if instance.username == "admin":
-            profile_data["role"] = Role.objects.get(code=Role.BuiltinCode.SUPER_ADMIN)
-            profile_data["status"] = UserProfile.Status.ACTIVE
+        if is_protected_user(instance):
             instance.is_active = True
             instance.is_staff = True
             instance.is_superuser = True
-            instance.save(update_fields=["is_active", "is_staff", "is_superuser"])
+        instance.save()
+        profile = ensure_profile(instance)
+        if is_protected_user(instance):
+            profile_data["role"] = Role.objects.get(code=Role.BuiltinCode.SUPER_ADMIN)
+            profile_data["status"] = UserProfile.Status.ACTIVE
         for field in ["nickname", "phone", "avatar", "wechat_work_id", "status", "role"]:
             if field in profile_data:
                 setattr(profile, field, profile_data[field])
         if password:
             profile.password_changed_at = timezone.now()
             profile.must_change_password = False
-        profile.save()
+        if is_protected_user(instance):
+            with protected_user_security_fix():
+                profile.save()
+        else:
+            profile.save()
         return instance
 
 
@@ -206,7 +243,7 @@ class AuthUserSerializer(UserSerializer):
     def get_permissions(self, obj):
         profile = ensure_profile(obj)
         if obj.is_superuser:
-            return list(Permission.objects.values_list("code", flat=True))
+            return ALL_PERMISSION_CODES
         if not profile.role:
             return []
         return list(profile.role.permissions.values_list("code", flat=True))

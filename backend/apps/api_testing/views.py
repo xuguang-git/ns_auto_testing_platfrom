@@ -22,7 +22,7 @@ from apps.projects.services import get_default_project
 class ApiModuleViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiModule.objects.select_related("project", "managed_platform", "parent").prefetch_related("apis").all()
     serializer_class = ApiModuleSerializer
-    permission_classes = [action_permission("module.read", "module.write", "module.delete")]
+    permission_classes = [action_permission("module.read", "module.create", "module.update", "module.delete")]
     filterset_fields = ["project", "managed_platform", "platform", "parent", "is_active"]
     search_fields = ["name", "code", "description"]
     audit_module = "api_module"
@@ -42,7 +42,13 @@ class ApiModuleViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class ApiDefinitionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiDefinition.objects.select_related("project", "module").prefetch_related("test_cases", "mock_rules").all()
     serializer_class = ApiDefinitionSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission(
+        ("api.read", "api_case.read", "automation.read", "quick_test.read", "capability.read"),
+        "api.create",
+        "api.update",
+        "api.delete",
+        ("api.debug", "api_case.debug", "automation.execute", "quick_test.execute", "capability.execute"),
+    )]
     throttle_scope = None
     filterset_fields = ["project", "platform", "module", "method", "status", "is_active"]
     search_fields = ["name", "path", "description"]
@@ -88,7 +94,7 @@ def count_suites_using_case(case: ApiTestCase) -> int:
 class ApiTestCaseViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiTestCase.objects.select_related("project", "api", "api__module").all()
     serializer_class = ApiTestCaseSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission(("api_case.read", "automation.read"), ("api_case.create", "automation.create"), ("api_case.update", "automation.update"), ("api_case.delete", "automation.delete"), ("api_case.debug", "automation.execute"))]
     filterset_fields = ["project", "api", "api__module", "status", "priority", "is_active"]
     search_fields = ["name", "description", "api__name", "api__path"]
     ordering_fields = ["created_at", "updated_at", "priority"]
@@ -119,7 +125,7 @@ class ApiTestCaseViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class ApiMockRuleViewSet(OperatorAuditModelViewSet):
     queryset = ApiMockRule.objects.select_related("api").all()
     serializer_class = ApiMockRuleSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("api.read", "api.create", "api.update", "api.delete")]
     filterset_fields = ["api", "enabled", "status_code"]
     search_fields = ["name", "description", "api__name", "api__path"]
     audit_module = "api_mock_rule"
@@ -128,7 +134,7 @@ class ApiMockRuleViewSet(OperatorAuditModelViewSet):
 class ApiSuiteViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiSuite.objects.select_related("project").all()
     serializer_class = ApiSuiteSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("automation.read", "automation.create", "automation.update", "automation.delete")]
     filterset_fields = ["project", "is_active"]
     search_fields = ["name", "description"]
     audit_module = "api_suite"
@@ -153,7 +159,7 @@ class ApiSuiteViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class ApiScenarioViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiScenario.objects.select_related("suite", "suite__project").all()
     serializer_class = ApiScenarioSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("automation.read", "automation.create", "automation.update", "automation.delete")]
     filterset_fields = ["suite", "priority", "is_active"]
     search_fields = ["name", "description"]
     audit_module = "api_scenario"
@@ -166,7 +172,7 @@ class ApiScenarioViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 class ApiStepViewSet(OperatorAuditModelViewSet):
     queryset = ApiStep.objects.select_related("scenario", "scenario__suite", "api").all()
     serializer_class = ApiStepSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("automation.read", "automation.create", "automation.update", "automation.delete")]
     filterset_fields = ["scenario", "platform", "method", "is_active"]
     search_fields = ["name", "path"]
     ordering_fields = ["sort_order", "created_at", "updated_at"]
@@ -176,7 +182,7 @@ class ApiStepViewSet(OperatorAuditModelViewSet):
 class ApiCaseViewSet(OperatorAuditModelViewSet):
     queryset = ApiCase.objects.select_related("suite", "suite__project").all()
     serializer_class = ApiCaseSerializer
-    permission_classes = [action_permission("api.read", "api.write", "api.delete")]
+    permission_classes = [action_permission("automation.read", "automation.create", "automation.update", "automation.delete")]
     filterset_fields = ["suite", "method", "is_active"]
     search_fields = ["name", "path"]
     ordering_fields = ["sort_order", "created_at", "updated_at"]

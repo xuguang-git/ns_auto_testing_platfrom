@@ -21,6 +21,8 @@ from apps.accounts.serializers import (
     UserSessionSerializer,
 )
 from apps.accounts.services import (
+    PAGE_PERMISSION_DEFINITIONS,
+    assert_user_manageable,
     create_user_session,
     ensure_builtin_roles,
     ensure_profile,
@@ -144,7 +146,7 @@ class ProfileView(APIView):
             "phone": request.data.get("phone", user.profile.phone),
             "avatar": request.data.get("avatar", user.profile.avatar),
         }
-        serializer = UserSerializer(user, data=data, partial=True)
+        serializer = UserSerializer(user, data=data, partial=True, context={"allow_protected_profile_update": True})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         write_audit(request=request, action_type=AuditLog.ActionType.UPDATE, module="profile", summary="更新个人资料")
@@ -176,7 +178,7 @@ class UserViewSet(viewsets.ModelViewSet):
     filterset_fields = ["profile__role", "profile__status", "is_active"]
     search_fields = ["username", "profile__nickname", "email"]
     ordering_fields = ["date_joined", "last_login", "username"]
-    permission_classes = [action_permission("user.read", "user.write", "user.delete")]
+    permission_classes = [action_permission("user.read", "user.create", "user.update", "user.delete")]
 
     def list(self, request, *args, **kwargs):
         ensure_builtin_roles()
@@ -214,6 +216,7 @@ class UserViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=["post"], url_path="enable")
     def enable(self, request, pk=None):
         user = self.get_object()
+        assert_user_manageable(user, "启用")
         profile = ensure_profile(user)
         user.is_active = True
         profile.status = UserProfile.Status.ACTIVE
@@ -225,8 +228,7 @@ class UserViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=["post"], url_path="disable")
     def disable(self, request, pk=None):
         user = self.get_object()
-        if user.username == "admin":
-            return response.Response({"detail": "admin 用户不可禁用"}, status=status.HTTP_400_BAD_REQUEST)
+        assert_user_manageable(user, "禁用")
         if user.is_superuser and User.objects.filter(is_superuser=True, is_active=True).exclude(pk=user.pk).count() == 0:
             return response.Response({"detail": "至少保留一个启用的超级管理员"}, status=status.HTTP_400_BAD_REQUEST)
         profile = ensure_profile(user)
@@ -242,6 +244,7 @@ class UserViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=["post"], url_path="reset-password")
     def reset_password(self, request, pk=None):
         user = self.get_object()
+        assert_user_manageable(user, "重置密码")
         serializer = ResetPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user.set_password(serializer.validated_data["password"])
@@ -258,10 +261,20 @@ class UserViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=["post"], url_path="force-logout")
     def force_logout(self, request, pk=None):
         user = self.get_object()
+        assert_user_manageable(user, "强制下线")
         count = revoke_user_sessions(user)
         AuthToken.objects.filter(user=user).delete()
         write_audit(request=request, action_type=AuditLog.ActionType.FORCE_LOGOUT, module="user", target_type="user", target_id=user.id, summary=f"强制用户 {user.username} 下线")
         return response.Response({"revoked": count})
+
+    def destroy(self, request, *args, **kwargs):
+        user = self.get_object()
+        assert_user_manageable(user, "删除")
+        user_id = user.id
+        username = user.username
+        result = super().destroy(request, *args, **kwargs)
+        write_audit(request=request, action_type=AuditLog.ActionType.DELETE, module="user", target_type="user", target_id=user_id, summary=f"删除用户 {username}")
+        return result
 
 
 class RoleViewSet(viewsets.ModelViewSet):
@@ -269,7 +282,7 @@ class RoleViewSet(viewsets.ModelViewSet):
     serializer_class = RoleSerializer
     filterset_fields = ["is_builtin", "is_active"]
     search_fields = ["name", "code", "description"]
-    permission_classes = [action_permission("role.read", "role.write", "role.delete")]
+    permission_classes = [action_permission("role.read", "role.create", "role.update", "role.delete")]
 
     def list(self, request, *args, **kwargs):
         ensure_builtin_roles()
@@ -297,6 +310,36 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Permission.objects.all()
     serializer_class = PermissionSerializer
     permission_classes = [action_permission("role.read")]
+    pagination_class = None
+
+    def list(self, request, *args, **kwargs):
+        ensure_builtin_roles()
+        permission_map = {item.code: item for item in Permission.objects.filter(is_visible=True)}
+        return response.Response(self._permission_tree_payload(permission_map))
+
+    def _permission_tree_payload(self, permission_map):
+        payload = []
+        for page in PAGE_PERMISSION_DEFINITIONS:
+            tab = permission_map.get(page["code"])
+            if tab:
+                payload.append(self._permission_payload(tab))
+            for child in page.get("children", []):
+                menu = permission_map.get(child["code"])
+                if menu:
+                    payload.append(self._permission_payload(menu, parent_id=tab.id if tab else None))
+                for action_code in child.get("actions", []):
+                    action = permission_map.get(action_code)
+                    if action:
+                        payload.append(self._permission_payload(action, parent_id=menu.id if menu else None, sort_order=child.get("sort_order", 0)))
+        return payload
+
+    def _permission_payload(self, permission, parent_id=None, sort_order=None):
+        data = PermissionSerializer(permission).data
+        if parent_id is not None:
+            data["parent"] = parent_id
+        if sort_order is not None:
+            data["sort_order"] = sort_order
+        return data
 
     @decorators.action(detail=False, methods=["post"], url_path="sync")
     def sync(self, request):
