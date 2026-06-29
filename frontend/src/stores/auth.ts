@@ -30,7 +30,7 @@ export const useAuthStore = defineStore("auth", {
           remember_me: payload.remember_me,
         };
       } catch (error) {
-        if (!isLocalDebugHttp()) throw error;
+        if (!canFallbackToPlainPassword()) throw error;
         loginPayload = {
           username: payload.username,
           password: payload.password,
@@ -75,3 +75,8 @@ const isLocalDebugHttp = () => {
     /^172\.(1[6-9]|2\d|3[01])\./.test(host)
   );
 };
+
+const canFallbackToPlainPassword = () => (
+  isLocalDebugHttp() ||
+  (window.location.protocol === "http:" && import.meta.env.VITE_ALLOW_INSECURE_LOGIN_FALLBACK === "true")
+);
