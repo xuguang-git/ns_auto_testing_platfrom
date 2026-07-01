@@ -17,7 +17,7 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
 
 export const encryptPassword = async (publicKeyPem: string, password: string) => {
   if (!window.isSecureContext || !crypto?.subtle) {
-    throw new Error("当前访问方式不支持浏览器加密登录，请使用 localhost、HTTPS，或启用本地调试降级登录。");
+    throw new Error("当前访问方式不支持浏览器加密登录，请使用 HTTPS 或 localhost。");
   }
   const key = await crypto.subtle.importKey(
     "spki",

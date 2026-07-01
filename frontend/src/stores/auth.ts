@@ -55,9 +55,15 @@ export const useAuthStore = defineStore("auth", {
       try {
         await accountApi.logout();
       } finally {
-        this.user = null;
-        this.checked = true;
+        this.clearSession();
       }
+    },
+    clearSession() {
+      clearHttpCache();
+      localStorage.removeItem("ns_token");
+      sessionStorage.removeItem("ns_token");
+      this.user = null;
+      this.checked = true;
     },
     has(code: string) {
       return this.user?.is_superuser || (this.user?.permissions || []).includes(code);
@@ -76,7 +82,4 @@ const isLocalDebugHttp = () => {
   );
 };
 
-const canFallbackToPlainPassword = () => (
-  isLocalDebugHttp() ||
-  (window.location.protocol === "http:" && import.meta.env.VITE_ALLOW_INSECURE_LOGIN_FALLBACK === "true")
-);
+const canFallbackToPlainPassword = () => isLocalDebugHttp();
