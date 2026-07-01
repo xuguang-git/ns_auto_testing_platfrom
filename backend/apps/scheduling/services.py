@@ -28,11 +28,7 @@ def compute_next_run_at(cron: str, base=None):
 def trigger_scheduled_plan(schedule: ScheduledPlan, trigger_type: str = TestRun.TriggerType.SCHEDULE) -> TestRun:
     """触发一个调度计划，创建测试报告并投递异步执行任务。"""
     with transaction.atomic():
-        schedule = (
-            ScheduledPlan.objects.select_for_update()
-            .select_related("environment", "suite")
-            .get(pk=schedule.pk)
-        )
+        schedule = ScheduledPlan.objects.select_for_update().get(pk=schedule.pk)
         test_run = TestRun.objects.create(
             suite=schedule.suite,
             environment=schedule.environment,

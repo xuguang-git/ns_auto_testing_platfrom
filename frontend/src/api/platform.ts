@@ -34,6 +34,7 @@ export const platformApi = {
   createEnvironmentPreRequestOperation: (payload: Record<string, unknown>) => http.post("/environment-pre-request-operations/", payload),
   updateEnvironmentPreRequestOperation: (id: number, payload: Record<string, unknown>) => http.patch(`/environment-pre-request-operations/${id}/`, payload),
   deleteEnvironmentPreRequestOperation: (id: number) => http.delete(`/environment-pre-request-operations/${id}/`),
+  runEnvironmentPreRequestOperation: (id: number, payload?: Record<string, unknown>) => http.post(`/environment-pre-request-operations/${id}/run/`, payload || {}, { toast: false, timeout: 120000 }),
   environmentRequestControls: (params?: Record<string, unknown>) => http.get("/environment-request-controls/", { params }),
   createEnvironmentRequestControl: (payload: Record<string, unknown>) => http.post("/environment-request-controls/", payload),
   updateEnvironmentRequestControl: (id: number, payload: Record<string, unknown>) => http.patch(`/environment-request-controls/${id}/`, payload),
@@ -137,7 +138,7 @@ export const platformApi = {
   updateUiAction: (id: number, payload: Record<string, unknown>) => http.patch(`/ui-actions/${id}/`, payload),
   deleteUiAction: (id: number) => http.delete(`/ui-actions/${id}/`),
   runUiCase: (id: number, payload?: Record<string, unknown>) => http.post(`/ui-cases/${id}/run/`, payload || {}, { timeout: 120000 }),
-  debugApi: (payload: Record<string, unknown>) => http.post("/api-definitions/debug/", payload),
+  debugApi: (payload: Record<string, unknown>) => http.post("/api-definitions/debug/", payload, { toast: false }),
 };
 
 const withResourceInvalidation = async <T>(key: string, request: Promise<T>) => {
