@@ -5,7 +5,7 @@ from apps.accounts.models import AuditLog
 from apps.accounts.permissions import action_permission
 from apps.api_testing.models import ApiModule
 from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
-from apps.api_testing.services import clear_environment_request_control_cache
+from apps.api_testing.services import clear_environment_request_control_cache, run_pre_request_operation
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.db_services import check_database_connection, execute_test_data_source
 from apps.projects.models import DataFactoryCapability, DatabaseConnection, Environment, EnvironmentPreRequestOperation, EnvironmentRequestControl, EnvironmentVariable, Platform, Project, TestDataSource
@@ -125,6 +125,15 @@ class EnvironmentPreRequestOperationViewSet(OperatorAuditModelViewSet):
     filterset_fields = ["environment", "is_enabled"]
     search_fields = ["name"]
     audit_module = "environment_pre_request"
+
+    @decorators.action(detail=True, methods=["post"], url_path="run")
+    def run(self, request, pk=None):
+        result = run_pre_request_operation(
+            self.get_object(),
+            platform=request.data.get("platform") or None,
+            variables=request.data.get("variables") or {},
+        )
+        return Response(result, status=status.HTTP_200_OK if result.get("ok") else status.HTTP_400_BAD_REQUEST)
 
 
 class EnvironmentRequestControlViewSet(OperatorAuditModelViewSet):

@@ -519,9 +519,23 @@ const resolvedRequestUrl = computed(() => {
   if (!currentPlatformBaseUrl.value) return path;
   return `${currentPlatformBaseUrl.value.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
 });
-const responseBodyText = computed(() => JSON.stringify(debugResult.value?.response?.body ?? {}, null, 2));
+const responseBodyText = computed(() => {
+  if (debugResult.value?.response?.body !== undefined) return JSON.stringify(debugResult.value.response.body, null, 2);
+  if (debugResult.value?.error) {
+    return JSON.stringify(
+      {
+        error: debugResult.value.error,
+        error_detail: debugResult.value.error_detail,
+        logs: debugResult.value.logs || [],
+      },
+      null,
+      2,
+    );
+  }
+  return "{}";
+});
 const responseHeadersText = computed(() => JSON.stringify(debugResult.value?.response?.headers ?? {}, null, 2));
-const responseStatusClass = computed(() => Number(debugResult.value?.response?.status_code || 0) >= 400 ? "status-error" : "status-ok");
+const responseStatusClass = computed(() => (debugResult.value?.ok === false || Number(debugResult.value?.response?.status_code || 0) >= 400 ? "status-error" : "status-ok"));
 const activeTestDataSources = computed(() => testDataSources.value.filter((item) => item.is_active));
 
 const platformName = (code: string) => platformOptions.value.find((item) => item.code === code)?.name || code;
@@ -868,6 +882,13 @@ const sendDebug = async () => {
     debugResult.value = data;
     debugRespTab.value = "body";
   } catch (error: any) {
+    const data = error?.response?.data;
+    if (data && typeof data === "object" && data.ok === false) {
+      debugResult.value = data;
+      debugRespTab.value = "body";
+      ElMessage.warning(data.error || error?.message || "请求执行失败");
+      return;
+    }
     ElMessage.error(error?.message || "请求失败");
   } finally {
     sending.value = false;

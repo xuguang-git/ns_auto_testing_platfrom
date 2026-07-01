@@ -21,6 +21,7 @@ VAR_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_.-]+)\s*}}")
 EXACT_VAR_PATTERN = re.compile(r"^{{\s*([a-zA-Z0-9_.-]+)\s*}}$")
 ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 REQUEST_CONTROL_CACHE_SECONDS = 60
+PRE_REQUEST_FAILURE_MESSAGE = "前置操作失败，请检查前置操作步骤和被测平台"
 _REQUEST_CONTROL_METHOD_CACHE: dict[int, tuple[float, frozenset[str] | None]] = {}
 BLOCKED_REQUEST_HEADERS = {
     "host",
@@ -31,6 +32,7 @@ BLOCKED_REQUEST_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
+SENSITIVE_LOG_KEYS = {"authorization", "cookie", "password", "passwd", "secret", "token", "access_token", "refresh_token", "username", "email", "account"}
 
 
 def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
@@ -157,6 +159,15 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
     except requests.RequestException as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         error_fields = _request_error_fields(exc)
+        logs = [*data_logs, *session_logs, *_request_error_logs(exc)]
+        if _is_pre_request_error(exc):
+            error_fields = {
+                **error_fields,
+                "error": PRE_REQUEST_FAILURE_MESSAGE,
+                "error_type": "pre_request_error",
+                "pre_request_error_detail": error_fields.get("error") or str(exc).strip(),
+            }
+            logs = [*data_logs, *session_logs, PRE_REQUEST_FAILURE_MESSAGE]
         return {
             "ok": False,
             "passed": False,
@@ -165,7 +176,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "assertions": [],
             "variables": extracted_variables,
             "runtime_variables": _safe_variable_snapshot(variables),
-            "logs": [*data_logs, *session_logs, *_request_error_logs(exc)],
+            "logs": logs,
             **error_fields,
         }
 
@@ -203,6 +214,16 @@ def _request_error_message(exc: requests.RequestException) -> tuple[str, str]:
     if isinstance(exc, requests.exceptions.TooManyRedirects):
         return "目标服务重定向次数过多，请检查接口地址或重定向配置。", "too_many_redirects"
     return str(exc).strip() or "请求执行失败，请检查目标服务配置。", "request_error"
+
+
+def _pre_request_exception(message: str) -> requests.RequestException:
+    exc = requests.RequestException(message)
+    setattr(exc, "is_pre_request_error", True)
+    return exc
+
+
+def _is_pre_request_error(exc: requests.RequestException) -> bool:
+    return bool(getattr(exc, "is_pre_request_error", False))
 
 
 def _apply_test_data_sources(source_ids: list[Any], variables: dict[str, Any], phase: str) -> tuple[list[str], dict[str, Any]]:
@@ -337,6 +358,153 @@ def clear_environment_request_control_cache(environment_id: int | None = None) -
     _REQUEST_CONTROL_METHOD_CACHE.pop(environment_id, None)
 
 
+def run_pre_request_operation(operation, platform: str | None = None, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+    environment = operation.environment
+    config = operation.config or {}
+    if not isinstance(config, dict):
+        return _pre_request_run_result(False, operation, platform or "", ["前置操作配置必须是对象"], "前置操作配置必须是对象")
+
+    run_platform = _resolve_pre_request_run_platform(operation, platform, config)
+    run_variables = _build_variables(environment, run_platform, variables or {})
+    logs: list[str] = []
+
+    target_platform = config.get("platform")
+    if target_platform and str(target_platform).lower() != str(run_platform or "").lower():
+        message = f"配置限定平台为 {target_platform}，当前试运行平台为 {run_platform or '未指定'}"
+        return _pre_request_run_result(False, operation, run_platform, logs, message)
+
+    login_config = config.get("login") or {}
+    if not login_config.get("path") and not login_config.get("url"):
+        message = "未配置登录请求，无法试运行 token 初始化"
+        return _pre_request_run_result(False, operation, run_platform, logs, message)
+
+    try:
+        login_resp, login_body = _send_configured_request(environment, run_platform, login_config, run_variables)
+        success_rule = login_config.get("success") or {"type": "status_code", "operator": "lt", "expected": 400}
+        login_success = _match_success_rule(success_rule, login_resp, login_body, 0)
+        logs.append(f"登录接口返回 Body：{_safe_log_text(login_body)}")
+        if not login_success:
+            message = f"{operation.name}登录失败：HTTP {login_resp.status_code}"
+            return _pre_request_run_result(False, operation, run_platform, logs, message, login_resp.status_code)
+
+        token_path = login_config.get("token_path") or "$.data.token"
+        token = _json_path(login_body, token_path)
+        if token is None:
+            message = f"{operation.name}未从响应中提取到 token：{token_path}"
+            return _pre_request_run_result(False, operation, run_platform, logs, message, login_resp.status_code)
+
+        token_key = config.get("token_key") or "token"
+        token_context = _build_token_context(str(token), token_key, config)
+        logs.append(f"Token 提取成功：{token_path} -> {token_key}")
+
+        validate_config = config.get("validate") or {}
+        if validate_config.get("enabled") is False or (not validate_config.get("path") and not validate_config.get("url")):
+            return _pre_request_run_result(True, operation, run_platform, logs, "")
+
+        token_variables = {**run_variables, token_context["token_key"]: token_context["token"]}
+        validate_resp, validate_body = _send_configured_request(environment, run_platform, validate_config, token_variables, token_context)
+        validate_rule = validate_config.get("success") or {"type": "status_code", "operator": "lt", "expected": 400}
+        validate_success = _match_success_rule(validate_rule, validate_resp, validate_body, 0)
+        logs.append(f"校验接口返回 Body：{_safe_log_text(validate_body)}")
+        if not validate_success:
+            message = f"{operation.name}校验失败：HTTP {validate_resp.status_code}"
+            return _pre_request_run_result(False, operation, run_platform, logs, message, validate_resp.status_code)
+        return _pre_request_run_result(True, operation, run_platform, logs, "")
+    except requests.RequestException as exc:
+        message, error_type = _request_error_message(exc)
+        detail = str(exc).strip()
+        if detail and detail != message:
+            logs.append(f"异常返回 Body：{_safe_log_text(detail)}")
+        result = _pre_request_run_result(False, operation, run_platform, logs, message)
+        result["error_type"] = error_type
+        return result
+
+
+def _resolve_pre_request_run_platform(operation, platform: str | None, config: dict[str, Any]) -> str:
+    if platform:
+        return str(platform).upper()
+    if config.get("platform"):
+        return str(config["platform"]).upper()
+    if operation.platforms:
+        return str(operation.platforms[0]).upper()
+    module = operation.modules.first()
+    if module and module.platform:
+        return str(module.platform).upper()
+    project_platforms = operation.environment.project.platforms or []
+    if project_platforms:
+        return str(project_platforms[0]).upper()
+    platform_urls = operation.environment.platform_base_urls or {}
+    if platform_urls:
+        return str(next(iter(platform_urls.keys()))).upper()
+    return "ERP"
+
+
+def _pre_request_run_result(ok: bool, operation, platform: str, logs: list[str], error: str, status_code: int | None = None) -> dict[str, Any]:
+    return {
+        "ok": ok,
+        "operation": {"id": operation.id, "name": operation.name},
+        "environment": {"id": operation.environment_id, "name": operation.environment.name},
+        "platform": platform,
+        "status_code": status_code,
+        "error": error,
+        "logs": logs,
+        "ran_at": timezone.now().isoformat(),
+    }
+
+
+def _configured_request_preview(environment, platform: str, request_config: dict[str, Any], variables: dict[str, Any], token_context: dict[str, Any] | None = None) -> str:
+    method = (request_config.get("method") or "GET").upper()
+    path = request_config.get("path") or request_config.get("url") or "/"
+    url = _render_value(_build_url(_get_base_url(environment, platform), path), variables)
+    headers = _render_value(_items_to_dict(request_config.get("headers"), for_headers=True), variables)
+    if token_context:
+        headers = _inject_session_token(headers, token_context)
+    params = _render_value(_items_to_dict(request_config.get("query_params") or request_config.get("params")), variables)
+    body = _render_value(request_config.get("body"), variables)
+    parts = [f"{method} {_mask_url_for_log(url)}"]
+    if params:
+        parts.append(f"Params={_safe_log_text(params)}")
+    if headers:
+        parts.append(f"Headers={_safe_log_text(headers)}")
+    if body not in (None, "", {}, []):
+        parts.append(f"Body={_safe_log_text(body)}")
+    return "；".join(parts)
+
+
+def _safe_log_text(value: Any, max_length: int = 2000) -> str:
+    try:
+        text = json.dumps(_mask_sensitive_log_value(value), ensure_ascii=False, default=str)
+    except TypeError:
+        text = str(value)
+    if len(text) > max_length:
+        return f"{text[:max_length]}...（已截断）"
+    return text
+
+
+def _mask_url_for_log(url: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return url
+    path = parsed.path or "/"
+    query = f"?{parsed.query}" if parsed.query else ""
+    return f"{parsed.scheme}://***{path}{query}"
+
+
+def _mask_sensitive_log_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        masked = {}
+        for key, item in value.items():
+            normalized = str(key).lower()
+            if any(sensitive in normalized for sensitive in SENSITIVE_LOG_KEYS):
+                masked[key] = "***"
+            else:
+                masked[key] = _mask_sensitive_log_value(item)
+        return masked
+    if isinstance(value, list):
+        return [_mask_sensitive_log_value(item) for item in value]
+    return value
+
+
 def _build_variables(environment, platform: str, extra: dict[str, Any]) -> dict[str, Any]:
     variables: dict[str, Any] = {}
     if environment:
@@ -443,7 +611,7 @@ def _ensure_token_from_config(
     operation_name: str,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     if not isinstance(config, dict):
-        raise requests.RequestException("全局前置操作配置必须是对象")
+        raise _pre_request_exception("全局前置操作配置必须是对象")
 
     target_platform = config.get("platform")
     if target_platform and str(target_platform).lower() != str(platform or "").lower():
@@ -472,12 +640,12 @@ def _ensure_token_from_config(
     login_resp, login_body = _send_configured_request(environment, platform, login_config, variables)
     success_rule = login_config.get("success") or {"type": "status_code", "operator": "lt", "expected": 400}
     if not _match_success_rule(success_rule, login_resp, login_body, 0):
-        raise requests.RequestException(f"{operation_name}登录失败：HTTP {login_resp.status_code}")
+        raise _pre_request_exception(f"{operation_name}登录失败：HTTP {login_resp.status_code}")
 
     token_path = login_config.get("token_path") or "$.data.token"
     token = _json_path(login_body, token_path)
     if token is None:
-        raise requests.RequestException(f"{operation_name}未从响应中提取到 token：{token_path}")
+        raise _pre_request_exception(f"{operation_name}未从响应中提取到 token：{token_path}")
 
     token = str(token)
     token_context = _build_token_context(token, token_key, config)
