@@ -661,7 +661,7 @@ def write_login_attempt(request, username: str, success: bool, reason: str = "")
 def record_failed_login(username: str) -> None:
     if not username:
         return
-    user = User.objects.filter(username=username).first()
+    user = get_user_model().objects.filter(username=username).first()
     if not user:
         return
     profile = ensure_profile(user)

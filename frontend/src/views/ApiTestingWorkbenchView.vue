@@ -314,7 +314,7 @@
         <el-form-item label="延迟"><el-input-number v-model="mockForm.delay_ms" :min="0" :max="60000" /> ms</el-form-item>
         <el-form-item label="响应 Body"><el-input v-model="mockForm.responseBodyText" type="textarea" :rows="8" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="mockDialog = false">取消</el-button><el-button type="primary" @click="saveMock">保存</el-button></template>
+      <template #footer><el-button @click="mockDialog = false">取消</el-button><el-button type="primary" :loading="savingMock" @click="saveMock">保存</el-button></template>
     </el-dialog>
   </div>
 </template>
@@ -381,6 +381,7 @@ const loading = ref(false);
 const sending = ref(false);
 const savingApi = ref(false);
 const savingApiName = ref(false);
+const savingMock = ref(false);
 const editingApiName = ref(false);
 const apiNameDraft = ref("");
 const apiNameInputRef = ref();
@@ -438,9 +439,23 @@ const toggleModule = (moduleId: number) => {
 };
 const platformName = (code: string) => platformOptions.value.find((item) => item.code === code)?.name || code;
 const moduleName = (id?: number) => modules.value.find((item) => item.id === id)?.name || "未分配";
-const responseBodyText = computed(() => JSON.stringify(debugResult.value?.response?.body ?? {}, null, 2));
+const responseBodyText = computed(() => {
+  if (debugResult.value?.response?.body !== undefined) return JSON.stringify(debugResult.value.response.body, null, 2);
+  if (debugResult.value?.error) {
+    return JSON.stringify(
+      {
+        error: debugResult.value.error,
+        error_detail: debugResult.value.error_detail,
+        logs: debugResult.value.logs || [],
+      },
+      null,
+      2,
+    );
+  }
+  return "{}";
+});
 const responseHeadersText = computed(() => JSON.stringify(debugResult.value?.response?.headers ?? {}, null, 2));
-const responseStatusClass = computed(() => Number(debugResult.value?.response?.status_code || 0) >= 400 ? "status-error" : "status-ok");
+const responseStatusClass = computed(() => (debugResult.value?.ok === false || Number(debugResult.value?.response?.status_code || 0) >= 400 ? "status-error" : "status-ok"));
 const currentEnvironment = computed(() => environments.value.find((item) => item.id === debugForm.environment));
 const currentPlatformBaseUrl = computed(() => {
   if (!selectedApi.value) return "";
@@ -515,7 +530,9 @@ const load = async () => {
     const queryApi = Number(route.query.apiId);
     const next = apis.value.find((item) => item.id === queryApi) || apis.value[0];
     if (route.query.tab === "debug") activeTab.value = "debug";
-    if (next) selectApi(next);
+    if (next) await selectApi(next);
+  } catch (error: any) {
+    ElMessage.error(error?.message || "接口管理页面加载失败，请稍后重试");
   } finally {
     loading.value = false;
   }
@@ -526,6 +543,9 @@ const loadCases = async () => {
   try {
     const { data } = await platformApi.apiTestCases({ api: selectedApi.value.id });
     cases.value = unwrapList<ApiTestCase>(data);
+  } catch (error: any) {
+    cases.value = [];
+    ElMessage.error(error?.message || "测试用例加载失败");
   } finally {
     caseLoading.value = false;
   }
@@ -536,6 +556,9 @@ const loadMocks = async () => {
   try {
     const { data } = await platformApi.apiMockRules({ api: selectedApi.value.id });
     mocks.value = unwrapList<ApiMockRule>(data);
+  } catch (error: any) {
+    mocks.value = [];
+    ElMessage.error(error?.message || "Mock 规则加载失败");
   } finally {
     mockLoading.value = false;
   }
@@ -554,7 +577,7 @@ const selectApi = async (api: ApiDefinition) => {
   authToken.value = String(api.auth_config?.token || "");
   Object.assign(designForm, { name: api.name, path: api.path, status: api.status, description: api.description || "" });
   await router.replace({ path: "/api-testing/apis", query: { apiId: api.id } });
-  await Promise.all([loadCases(), loadMocks()]);
+  await Promise.allSettled([loadCases(), loadMocks()]);
 };
 const goCasePage = () => {
   if (!selectedApi.value) return;
@@ -751,6 +774,13 @@ const sendDebug = async () => {
     debugResult.value = data;
     debugRespTab.value = "body";
   } catch (error: any) {
+    const data = error?.response?.data;
+    if (data && typeof data === "object" && data.ok === false) {
+      debugResult.value = data;
+      debugRespTab.value = "body";
+      ElMessage.warning(data.error || error?.message || "请求执行失败");
+      return;
+    }
     ElMessage.error(error?.message || "请求失败");
   } finally {
     sending.value = false;
@@ -787,16 +817,46 @@ const openMockForm = (row?: ApiMockRule) => {
   mockDialog.value = true;
 };
 const saveMock = async () => {
-  if (!selectedApi.value || !mockForm.name.trim()) return;
-  const payload = { api: selectedApi.value.id, name: mockForm.name, enabled: mockForm.enabled, status_code: mockForm.status_code, delay_ms: mockForm.delay_ms, response_body: parseJson(mockForm.responseBodyText, {}) };
-  if (editingMockId.value) await platformApi.updateApiMockRule(editingMockId.value, payload);
-  else await platformApi.createApiMockRule(payload);
-  ElMessage.success("Mock 规则已保存");
-  mockDialog.value = false;
-  await loadMocks();
+  if (!selectedApi.value) return;
+  if (!mockForm.name.trim()) {
+    ElMessage.warning("请填写 Mock 规则名称");
+    return;
+  }
+  let responseBody: unknown;
+  try {
+    responseBody = parseJson(mockForm.responseBodyText, {});
+  } catch (error: any) {
+    ElMessage.warning(error?.message || "响应 Body JSON 格式不正确");
+    return;
+  }
+  savingMock.value = true;
+  try {
+    const payload = {
+      api: selectedApi.value.id,
+      name: mockForm.name.trim(),
+      enabled: mockForm.enabled,
+      status_code: mockForm.status_code,
+      delay_ms: mockForm.delay_ms,
+      response_body: responseBody,
+    };
+    if (editingMockId.value) await platformApi.updateApiMockRule(editingMockId.value, payload);
+    else await platformApi.createApiMockRule(payload);
+    ElMessage.success("Mock 规则已保存");
+    mockDialog.value = false;
+    await loadMocks();
+  } catch (error: any) {
+    ElMessage.error(error?.message || "Mock 规则保存失败");
+  } finally {
+    savingMock.value = false;
+  }
 };
 const toggleMock = async (row: ApiMockRule) => {
-  await platformApi.updateApiMockRule(row.id, { enabled: row.enabled });
+  try {
+    await platformApi.updateApiMockRule(row.id, { enabled: row.enabled });
+  } catch (error: any) {
+    row.enabled = !row.enabled;
+    ElMessage.error(error?.message || "Mock 规则状态更新失败");
+  }
 };
 const removeMock = async (row: ApiMockRule) => {
   await ElMessageBox.confirm(`确认删除 Mock“${row.name}”？`, "删除确认", { type: "warning" });

@@ -29,11 +29,13 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { onMounted, reactive } from "vue";
+import { useRouter } from "vue-router";
 
 import { accountApi } from "@/api/account";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
+const router = useRouter();
 const profile = reactive({ nickname: "", email: "", phone: "" });
 const password = reactive({ current_password: "", new_password: "", confirm_password: "" });
 
@@ -51,8 +53,8 @@ const saveProfile = async () => {
 const changePassword = async () => {
   await accountApi.changePassword(password);
   ElMessage.success("密码已修改，请重新登录");
-  await auth.logout();
-  location.href = "/login";
+  auth.clearSession();
+  await router.replace("/login");
 };
 onMounted(async () => {
   if (!auth.user) await auth.loadMe();

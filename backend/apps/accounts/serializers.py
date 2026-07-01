@@ -224,7 +224,7 @@ class LoginSerializer(serializers.Serializer):
         password = attrs.get("password") or self.context.get("password") or ""
         user = authenticate(request=request, username=attrs["username"], password=password)
         if not user:
-            raise serializers.ValidationError("用户名或密码错误")
+            raise serializers.ValidationError("账户密码错误，重试或联系管理员")
         profile = ensure_profile(user)
         if profile.status == UserProfile.Status.DISABLED or not user.is_active:
             raise serializers.ValidationError("账号已被禁用")

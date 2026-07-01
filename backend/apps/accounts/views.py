@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
@@ -75,7 +76,10 @@ class LoginView(APIView):
         serializer = LoginSerializer(data={**request.data, "password": password}, context={"request": request, "password": password})
         if not serializer.is_valid():
             write_login_attempt(request, username, False, str(serializer.errors))
-            record_failed_login(username)
+            try:
+                record_failed_login(username)
+            except DjangoPermissionDenied:
+                pass
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         user = serializer.validated_data["user"]

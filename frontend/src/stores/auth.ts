@@ -30,7 +30,7 @@ export const useAuthStore = defineStore("auth", {
           remember_me: payload.remember_me,
         };
       } catch (error) {
-        if (!isLocalDebugHttp()) throw error;
+        if (!canFallbackToPlainPassword()) throw error;
         loginPayload = {
           username: payload.username,
           password: payload.password,
@@ -55,9 +55,15 @@ export const useAuthStore = defineStore("auth", {
       try {
         await accountApi.logout();
       } finally {
-        this.user = null;
-        this.checked = true;
+        this.clearSession();
       }
+    },
+    clearSession() {
+      clearHttpCache();
+      localStorage.removeItem("ns_token");
+      sessionStorage.removeItem("ns_token");
+      this.user = null;
+      this.checked = true;
     },
     has(code: string) {
       return this.user?.is_superuser || (this.user?.permissions || []).includes(code);
@@ -75,3 +81,5 @@ const isLocalDebugHttp = () => {
     /^172\.(1[6-9]|2\d|3[01])\./.test(host)
   );
 };
+
+const canFallbackToPlainPassword = () => isLocalDebugHttp();

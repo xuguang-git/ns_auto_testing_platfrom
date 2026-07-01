@@ -96,10 +96,11 @@
                     <el-tag size="small" :type="row.is_enabled ? 'success' : 'info'">{{ row.is_enabled ? "启用" : "停用" }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="160" fixed="right">
+                <el-table-column label="操作" width="220" fixed="right">
                   <template #default="{ row }">
                     <el-button link type="primary" @click="openPreRequestEdit(row)">编辑</el-button>
                     <el-button link class="danger-link" @click="removePreRequest(row)">删除</el-button>
+                    <el-button link type="primary" :loading="runningPreRequestId === row.id" @click="runPreRequest(row)">试运行</el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -138,7 +139,7 @@
             <el-tab-pane label="请求控件" name="requestControl">
               <template #label>请求控件</template>
               <div class="request-control-panel">
-                <div class="request-control-label">运行请求方式</div>
+                <div class="request-control-label">允许请求方式</div>
                 <el-checkbox-group v-model="requestControlForm.methods" class="method-control-group">
                   <el-checkbox-button v-for="method in httpMethods" :key="method" :value="method">{{ method }}</el-checkbox-button>
                 </el-checkbox-group>
@@ -317,6 +318,30 @@
         <el-button type="primary" :loading="saving" @click="saveVariable">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="preRequestRunDialogVisible" title="前置操作试运行记录" width="760px">
+      <div v-if="preRequestRunResult" class="run-log-panel">
+        <div class="run-log-summary">
+          <el-tag :type="preRequestRunResult.ok ? 'success' : 'danger'">{{ preRequestRunResult.ok ? "运行成功" : "运行失败" }}</el-tag>
+          <span>{{ preRequestRunResult.operation?.name }}</span>
+          <span>{{ preRequestRunResult.environment?.name }}</span>
+          <span>{{ preRequestRunResult.platform }}</span>
+          <span>{{ preRequestRunResult.ran_at }}</span>
+        </div>
+        <el-alert v-if="preRequestRunResult.error" :title="preRequestRunResult.error" type="error" show-icon :closable="false" />
+        <div class="run-log-title">接口返回 Body</div>
+        <div class="run-log-list">
+          <div v-for="(log, index) in preRequestRunLogs" :key="index" class="run-log-line">
+            <span>{{ index + 1 }}</span>
+            <pre>{{ log }}</pre>
+          </div>
+        </div>
+      </div>
+      <el-empty v-else description="暂无运行记录" />
+      <template #footer>
+        <el-button @click="preRequestRunDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -329,6 +354,7 @@ import { platformApi, unwrapList } from "@/api/platform";
 const loading = ref(false);
 const saving = ref(false);
 const savingRequestControl = ref(false);
+const runningPreRequestId = ref<number>();
 const keyword = ref("");
 const platformFilter = ref("");
 const projects = ref<any[]>([]);
@@ -338,11 +364,13 @@ const modules = ref<any[]>([]);
 const selectedEnvironment = ref<any>();
 const envDialogVisible = ref(false);
 const preRequestDialogVisible = ref(false);
+const preRequestRunDialogVisible = ref(false);
 const varDialogVisible = ref(false);
 const activeEnvTab = ref("preRequest");
 const editingEnvId = ref<number>();
 const editingPreRequestId = ref<number>();
 const editingVarId = ref<number>();
+const preRequestRunResult = ref<any>();
 
 const envForm = reactive({
   name: "",
@@ -396,6 +424,12 @@ const modulesForPlatform = (code: string) => modules.value.filter((item) => modu
 const preRequestOperations = computed(() => selectedEnvironment.value?.pre_request_operations || []);
 const requestControls = computed(() => selectedEnvironment.value?.request_controls || []);
 const defaultRequestControl = computed(() => requestControls.value[0]);
+const preRequestRunLogs = computed(() => {
+  const logs = preRequestRunResult.value?.logs;
+  if (Array.isArray(logs) && logs.length) return logs;
+  if (!preRequestRunResult.value) return [];
+  return ["暂无接口返回 Body"];
+});
 const variables = computed(() => selectedEnvironment.value?.variable_items || []);
 const filteredVariables = computed(() =>
   variables.value.filter((item: any) => {
@@ -739,6 +773,30 @@ const removePreRequest = async (row: any) => {
   await load();
 };
 
+const runPreRequest = async (row: any) => {
+  runningPreRequestId.value = row.id;
+  preRequestRunResult.value = undefined;
+  try {
+    const platform = (row.platforms || [])[0] || modules.value.find((item) => (row.modules || []).includes(item.id))?.platform || "";
+    const { data } = await platformApi.runEnvironmentPreRequestOperation(row.id, { platform });
+    preRequestRunResult.value = data;
+    preRequestRunDialogVisible.value = true;
+    ElMessage.success("前置操作试运行成功");
+  } catch (error: any) {
+    preRequestRunResult.value = error?.response?.data || {
+      ok: false,
+      operation: { id: row.id, name: row.name },
+      environment: { id: selectedEnvironment.value?.id, name: selectedEnvironment.value?.name },
+      error: error?.message || "前置操作试运行失败",
+      logs: [error?.message || "前置操作试运行失败"],
+    };
+    preRequestRunDialogVisible.value = true;
+    ElMessage.warning(preRequestRunResult.value?.error || "前置操作试运行失败");
+  } finally {
+    runningPreRequestId.value = undefined;
+  }
+};
+
 const applyRequestControl = async () => {
   if (!selectedEnvironment.value) return;
   if (!requestControlForm.methods.length) {
@@ -749,7 +807,7 @@ const applyRequestControl = async () => {
   try {
     const payload = {
       environment: selectedEnvironment.value.id,
-      name: "运行请求方式",
+      name: "允许请求方式",
       methods: requestControlForm.methods,
       is_enabled: true,
       description: "限制当前环境允许执行的 HTTP 请求方式",
@@ -822,3 +880,62 @@ const removeVariable = async (row: any) => {
 
 onMounted(load);
 </script>
+
+<style scoped>
+.run-log-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.run-log-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  color: #475569;
+  font-size: 13px;
+}
+
+.run-log-list {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #0f172a;
+}
+
+.run-log-title {
+  color: #1f2937;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.run-log-line {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.run-log-line:last-child {
+  border-bottom: 0;
+}
+
+.run-log-line span {
+  padding: 10px 12px;
+  color: #94a3b8;
+  text-align: right;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.run-log-line pre {
+  margin: 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #e2e8f0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+</style>

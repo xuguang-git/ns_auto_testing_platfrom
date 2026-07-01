@@ -74,10 +74,14 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
 import { onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 
 import { accountApi } from "@/api/account";
 import { unwrapList } from "@/api/platform";
+import { useAuthStore } from "@/stores/auth";
 
+const auth = useAuthStore();
+const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
 const users = ref<any[]>([]);
@@ -173,6 +177,10 @@ const forceLogout = async (row: any) => {
   }
   await accountApi.forceLogout(row.id);
   ElMessage.success("已强制下线");
+  if (row.id === auth.user?.id) {
+    auth.clearSession();
+    await router.replace("/login");
+  }
 };
 
 onMounted(load);

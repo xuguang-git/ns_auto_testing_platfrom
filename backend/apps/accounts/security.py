@@ -122,6 +122,9 @@ def revoke_token_record(record: AuthToken | None) -> None:
 
 
 def cookie_secure() -> bool:
+    configured = getattr(settings, "AUTH_COOKIE_SECURE", None)
+    if configured is not None:
+        return bool(configured)
     return not getattr(settings, "DEBUG", False)
 
 
