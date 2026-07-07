@@ -68,7 +68,10 @@ def run_api_suite(self, test_run_id: int) -> dict:
                     status=step_status,
                     sort_order=sort_order,
                     request=result.get("request") or {},
-                    response=result.get("response") or {},
+                    response={
+                        **(result.get("response") or {}),
+                        "diagnosis": result.get("diagnosis") or {},
+                    },
                     assertions=result.get("assertions") or [],
                     logs=result.get("logs") or [],
                     error_message=result.get("error") or "",
@@ -125,7 +128,10 @@ def run_api_suite(self, test_run_id: int) -> dict:
                         "variables_before": variables_before,
                         "variables_after": variables_after,
                     },
-                    response=result.get("response") or {},
+                    response={
+                        **(result.get("response") or {}),
+                        "diagnosis": result.get("diagnosis") or {},
+                    },
                     assertions=result.get("assertions") or [],
                     logs=result.get("logs") or [],
                     error_message=result.get("error") or "",
@@ -148,18 +154,20 @@ def run_api_suite(self, test_run_id: int) -> dict:
 
     finished_at = timezone.now()
     duration_ms = int((finished_at - test_run.started_at).total_seconds() * 1000) if test_run.started_at else 0
+    diagnosis_summary = _build_diagnosis_summary(test_run)
     summary = {
         "total": total + skipped,
         "passed": passed,
         "failed": failed,
         "skipped": skipped,
         "pass_rate": round((passed / total) * 100, 2) if total else 0,
+        "diagnosis": diagnosis_summary,
     }
     test_run.status = final_status
     test_run.finished_at = finished_at
     test_run.duration_ms = duration_ms
     test_run.summary = summary
-    test_run.report = {"summary": summary}
+    test_run.report = {"summary": summary, "diagnosis": diagnosis_summary}
     test_run.logs = _append_log(test_run.logs, "info" if final_status == TestRun.Status.COMPLETED else "error", f"执行结束：总数 {summary['total']}，通过 {passed}，失败 {failed}，跳过 {skipped}")
     test_run.save(
         update_fields=[
@@ -190,6 +198,32 @@ def _update_schedule_result(test_run: TestRun, status: str) -> None:
     if not test_run.schedule_id:
         return
     ScheduledPlan.objects.filter(pk=test_run.schedule_id).update(last_status=status)
+
+
+def _build_diagnosis_summary(test_run: TestRun) -> dict:
+    """按步骤诊断结果聚合报告摘要，不在查询报告时重复扫描和推导。"""
+    failure_type_counts: dict[str, int] = {}
+    environment_issue_count = 0
+    retry_suggested_count = 0
+    for step in test_run.steps.all():
+        diagnosis = (step.response or {}).get("diagnosis") or {}
+        failure_type = diagnosis.get("failure_type")
+        if not failure_type:
+            continue
+        failure_type_counts[failure_type] = failure_type_counts.get(failure_type, 0) + 1
+        if diagnosis.get("is_environment_issue"):
+            environment_issue_count += 1
+        if diagnosis.get("retry_suggested"):
+            retry_suggested_count += 1
+    top_failure_type = ""
+    if failure_type_counts:
+        top_failure_type = max(failure_type_counts.items(), key=lambda item: item[1])[0]
+    return {
+        "failure_type_counts": failure_type_counts,
+        "environment_issue_count": environment_issue_count,
+        "retry_suggested_count": retry_suggested_count,
+        "top_failure_type": top_failure_type,
+    }
 
 
 def _append_log(logs, level: str, message: str) -> list[dict]:

@@ -44,8 +44,26 @@
         <strong>响应结果</strong>
         <span v-if="result" :class="responseStatusClass">{{ result.response?.status_code || "-" }} · {{ result.response?.elapsed_ms || "-" }}ms</span>
       </div>
+      <div class="quick-diagnosis-card" :class="diagnosisSeverityClass">
+        <div>
+          <strong>{{ diagnosisTitle }}</strong>
+          <span v-if="diagnosis.is_environment_issue">疑似环境问题</span>
+          <span v-if="diagnosis.retry_suggested">建议重试</span>
+        </div>
+        <p>{{ diagnosisSummary }}</p>
+        <p>{{ diagnosisAdvice }}</p>
+      </div>
       <el-tabs v-model="activeRespTab" class="response-tabs">
         <el-tab-pane label="Body" name="body"><pre>{{ responseBodyText }}</pre></el-tab-pane>
+        <el-tab-pane label="诊断" name="diagnosis">
+          <el-empty v-if="!diagnosisVisible" description="当前响应暂无失败归因" />
+          <div v-else class="quick-diagnosis-evidence">
+            <div v-for="item in diagnosis.evidence || []" :key="item.key">
+              <span>{{ item.key }}</span>
+              <code>{{ item.value }}</code>
+            </div>
+          </div>
+        </el-tab-pane>
         <el-tab-pane label="提取器" name="extractor">
           <div class="extractor-panel">
             <div class="extractor-toolbar">
@@ -150,6 +168,16 @@ import { extractJsonPath, formatExtractValue } from "@/utils/jsonExtract";
 
 interface RowItem { enabled: boolean; key: string; value: string; description?: string }
 interface ExtractorRow { uid: number; name: string; path: string; ok: boolean; message: string; valueText: string; value?: unknown }
+interface Diagnosis {
+  failure_type?: string;
+  failure_label?: string;
+  failure_summary?: string;
+  failure_advice?: string;
+  is_environment_issue?: boolean;
+  retry_suggested?: boolean;
+  severity?: string;
+  evidence?: Array<{ key: string; value: unknown }>;
+}
 
 const KeyValueEditor = defineComponent({
   props: { modelValue: { type: Array, required: true } },
@@ -200,6 +228,25 @@ const capabilityForm = reactive({ name: "", description: "", platform: "", envir
 const responseBodyText = computed(() => JSON.stringify(result.value?.response?.body ?? {}, null, 2));
 const responseHeadersText = computed(() => JSON.stringify(result.value?.response?.headers ?? {}, null, 2));
 const responseStatusClass = computed(() => Number(result.value?.response?.status_code || 0) >= 400 ? "status-error" : "status-ok");
+const diagnosis = computed<Diagnosis>(() => result.value?.diagnosis || {});
+const diagnosisVisible = computed(() => Boolean(diagnosis.value.failure_type));
+const diagnosisSeverityClass = computed(() => {
+  if (!result.value) return "idle";
+  if (!diagnosisVisible.value) return "success";
+  return diagnosis.value.severity || "warning";
+});
+const diagnosisTitle = computed(() => {
+  if (!result.value) return "调试归因";
+  return diagnosis.value.failure_label || "暂无失败归因";
+});
+const diagnosisSummary = computed(() => {
+  if (!result.value) return "发送请求后，这里会展示失败类型、环境风险和建议动作。";
+  return diagnosis.value.failure_summary || "本次请求未命中失败归因规则。";
+});
+const diagnosisAdvice = computed(() => {
+  if (!result.value) return "快捷调试复用接口管理工作台同一套诊断结构。";
+  return diagnosis.value.failure_advice || "如需沉淀资产，可使用快速新建保存到接口管理。";
+});
 const platformCode = (item: any) => item.code?.toUpperCase?.() || item.code || "";
 const platformOptions = computed(() => platforms.value.map((item) => ({ ...item, code: platformCode(item) })));
 const modulePlatformCode = (module: any) => module.platform || platformCode(platforms.value.find((item) => item.id === module.managed_platform));
@@ -501,6 +548,15 @@ const send = async () => {
     });
     result.value = data;
     activeRespTab.value = "body";
+  } catch (error: any) {
+    const data = error?.response?.data;
+    if (data && typeof data === "object" && data.ok === false) {
+      result.value = data;
+      activeRespTab.value = data.diagnosis?.failure_type ? "diagnosis" : "body";
+      ElMessage.warning(data.error || error?.message || "请求执行失败");
+      return;
+    }
+    ElMessage.error(error?.message || "请求失败");
   } finally {
     sending.value = false;
   }
@@ -516,3 +572,89 @@ onMounted(async () => {
   createForm.module = modulesForPlatform(createForm.platform)[0]?.id;
 });
 </script>
+
+<style scoped>
+.quick-diagnosis-card {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+
+.quick-diagnosis-card.warning {
+  border-color: var(--el-color-warning-light-5);
+  background: var(--el-color-warning-light-9);
+}
+
+.quick-diagnosis-card.error {
+  border-color: var(--el-color-danger-light-5);
+  background: var(--el-color-danger-light-9);
+}
+
+.quick-diagnosis-card.success {
+  border-color: var(--el-color-success-light-6);
+  background: var(--el-color-success-light-9);
+}
+
+.quick-diagnosis-card.idle {
+  border-color: var(--el-color-primary-light-7);
+  background: var(--el-color-primary-light-9);
+}
+
+.quick-diagnosis-card div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quick-diagnosis-card strong {
+  color: var(--el-text-color-primary);
+}
+
+.quick-diagnosis-card span {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-8);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quick-diagnosis-card p {
+  margin: 6px 0 0;
+  color: var(--el-text-color-regular);
+  line-height: 1.55;
+}
+
+.quick-diagnosis-card p:last-child {
+  color: var(--el-text-color-secondary);
+}
+
+.quick-diagnosis-evidence {
+  display: grid;
+  gap: 8px;
+}
+
+.quick-diagnosis-evidence div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+
+.quick-diagnosis-evidence span {
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+}
+
+.quick-diagnosis-evidence code {
+  word-break: break-all;
+}
+</style>

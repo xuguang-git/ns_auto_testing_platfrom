@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.api_testing.mock_security import mock_proxy_path, mock_rule_path
 from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiTestCase
 from apps.core.serializers import OperatorFieldsMixin
 from apps.projects.services import get_default_project
@@ -101,11 +102,41 @@ class ApiMockRuleSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
     api_name = serializers.CharField(source="api.name", read_only=True)
     api_path = serializers.CharField(source="api.path", read_only=True)
     method = serializers.CharField(source="api.method", read_only=True)
+    mock_path = serializers.SerializerMethodField()
+    mock_public_path = serializers.SerializerMethodField()
+    mock_proxy_path = serializers.SerializerMethodField()
+    mock_public_proxy_path = serializers.SerializerMethodField()
 
     class Meta:
         model = ApiMockRule
         fields = "__all__"
-        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name", "api_name", "api_path", "method"]
+        read_only_fields = [
+            "created_at",
+            "updated_at",
+            "created_by",
+            "updated_by",
+            "created_by_name",
+            "updated_by_name",
+            "api_name",
+            "api_path",
+            "method",
+            "mock_path",
+            "mock_public_path",
+            "mock_proxy_path",
+            "mock_public_proxy_path",
+        ]
+
+    def get_mock_path(self, obj):
+        return mock_rule_path(obj)
+
+    def get_mock_public_path(self, obj):
+        return mock_rule_path(obj, with_token=True)
+
+    def get_mock_proxy_path(self, obj):
+        return mock_proxy_path(obj)
+
+    def get_mock_public_proxy_path(self, obj):
+        return mock_proxy_path(obj, with_token=True)
 
 
 class ApiSuiteSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):

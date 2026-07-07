@@ -14,7 +14,10 @@
           @click="selectEnvironment(env)"
         >
           <span>{{ env.name }}</span>
-          <el-tag size="small" :type="env.is_default ? 'success' : 'info'">{{ envTypeText(env.env_type) }}</el-tag>
+          <div class="secondary-item-tags">
+            <el-tag size="small" :type="env.is_default ? 'success' : 'info'">{{ envTypeText(env.env_type) }}</el-tag>
+            <el-tag v-if="selectedEnvironment?.id === env.id || environmentHealthMap[env.id]" size="small" :type="environmentHealthTagTypeFor(env)">{{ environmentHealthTextFor(env) }}</el-tag>
+          </div>
         </button>
         <el-empty v-if="!environments.length && !loading" description="暂无环境" />
       </div>
@@ -42,7 +45,11 @@
           <template #header>
             <div class="card-header">
               <span>{{ selectedEnvironment.name }}</span>
-              <el-tag>{{ selectedEnvironment.is_default ? "默认环境" : envTypeText(selectedEnvironment.env_type) }}</el-tag>
+              <div class="env-health-actions">
+                <el-tag>{{ selectedEnvironment.is_default ? "默认环境" : envTypeText(selectedEnvironment.env_type) }}</el-tag>
+                <el-tag :type="environmentHealthTagType">{{ environmentHealthText }}</el-tag>
+                <el-button size="small" class="health-check-button" :loading="checkingSelectedEnvironmentHealth" @click="runSelectedEnvironmentHealth">健康检查</el-button>
+              </div>
             </div>
           </template>
           <el-descriptions :column="3" border>
@@ -51,6 +58,51 @@
             <el-descriptions-item label="只读">{{ selectedEnvironment.is_readonly ? "是" : "否" }}</el-descriptions-item>
             <el-descriptions-item label="兜底 Base URL" :span="3">{{ selectedEnvironment.base_url || "未配置" }}</el-descriptions-item>
           </el-descriptions>
+        </el-card>
+
+        <el-card v-if="selectedEnvironment" shadow="never" class="panel-card environment-health-panel">
+          <template #header>
+            <div class="card-header">
+              <span>环境健康检查</span>
+            </div>
+          </template>
+          <div class="environment-health-metrics">
+            <div class="health-metric">
+              <span>当前状态</span>
+              <strong>{{ environmentHealthText }}</strong>
+              <em>选中环境实时结果</em>
+            </div>
+            <div class="health-metric">
+              <span>通过检查项</span>
+              <strong class="success">{{ environmentHealthPassCount }}</strong>
+              <em>Base URL、DNS、数据库等</em>
+            </div>
+            <div class="health-metric">
+              <span>风险检查项</span>
+              <strong class="warning">{{ environmentHealthWarnCount }}</strong>
+              <em>不阻断但需关注</em>
+            </div>
+            <div class="health-metric">
+              <span>失败检查项</span>
+              <strong class="danger">{{ environmentHealthFailCount }}</strong>
+              <em>可能阻断调试/定时</em>
+            </div>
+          </div>
+          <div class="environment-health-card" :class="{ empty: !environmentHealth }">
+            <div class="environment-health-summary">
+              <strong>{{ environmentHealth?.summary || "尚未执行健康检查" }}</strong>
+              <span v-if="environmentHealth">耗时 {{ environmentHealth.duration_ms || 0 }}ms</span>
+              <span v-else>覆盖 Base URL、请求控件、全局前置操作和数据库连通性</span>
+            </div>
+            <div v-if="environmentHealth" class="environment-health-checks">
+              <div v-for="item in environmentHealth.checks || []" :key="item.check_key" class="environment-health-check" :class="item.status">
+                <b>{{ item.check_name }}</b>
+                <span>{{ item.summary }}</span>
+                <em v-if="item.advice">{{ item.advice }}</em>
+              </div>
+            </div>
+            <el-empty v-else description="点击上方健康检查后生成当前环境的健康结果" :image-size="80" />
+          </div>
         </el-card>
 
         <el-card v-if="selectedEnvironment" shadow="never" class="panel-card">
@@ -362,6 +414,9 @@ const environments = ref<any[]>([]);
 const platforms = ref<any[]>([]);
 const modules = ref<any[]>([]);
 const selectedEnvironment = ref<any>();
+const environmentHealth = ref<any>();
+const environmentHealthMap = reactive<Record<number, any>>({});
+const checkingEnvironmentHealthId = ref<number>();
 const envDialogVisible = ref(false);
 const preRequestDialogVisible = ref(false);
 const preRequestRunDialogVisible = ref(false);
@@ -467,6 +522,24 @@ const operationLoginText = (operation: any) => {
   const login = operation.config?.login || {};
   return `${login.method || "POST"} ${login.path || login.url || "未配置"}`;
 };
+const environmentHealthText = computed(() => {
+  const status = environmentHealth.value?.status || "unknown";
+  return ({ healthy: "健康", warning: "有风险", unhealthy: "不健康", checking: "检查中", unknown: "未检查" } as Record<string, string>)[status] || status;
+});
+const environmentHealthTagType = computed(() => {
+  const status = environmentHealth.value?.status || "unknown";
+  return ({ healthy: "success", warning: "warning", unhealthy: "danger", checking: "info", unknown: "info" } as Record<string, string>)[status] || "info";
+});
+const environmentHealthChecks = computed(() => environmentHealth.value?.checks || []);
+const environmentHealthPassCount = computed(() => environmentHealthChecks.value.filter((item: any) => item.status === "passed").length);
+const environmentHealthWarnCount = computed(() => environmentHealthChecks.value.filter((item: any) => item.status === "warning").length);
+const environmentHealthFailCount = computed(() => environmentHealthChecks.value.filter((item: any) => item.status === "failed").length);
+const checkingSelectedEnvironmentHealth = computed(() => Boolean(selectedEnvironment.value?.id && checkingEnvironmentHealthId.value === selectedEnvironment.value.id));
+const healthTextByStatus = (status: string) => ({ healthy: "健康", warning: "有风险", unhealthy: "不健康", checking: "检查中", unknown: "未检查" } as Record<string, string>)[status] || status;
+const healthTagTypeByStatus = (status: string) => ({ healthy: "success", warning: "warning", unhealthy: "danger", checking: "info", unknown: "info" } as Record<string, string>)[status] || "info";
+const environmentHealthFor = (env: any) => environmentHealthMap[Number(env?.id)] || (selectedEnvironment.value?.id === env?.id ? environmentHealth.value : undefined);
+const environmentHealthTextFor = (env: any) => healthTextByStatus(environmentHealthFor(env)?.status || "unknown");
+const environmentHealthTagTypeFor = (env: any) => healthTagTypeByStatus(environmentHealthFor(env)?.status || "unknown");
 
 const ensureProject = async () => {
   if (projects.value[0]?.id) return projects.value[0].id;
@@ -482,7 +555,41 @@ const ensureProject = async () => {
 
 const selectEnvironment = (env: any) => {
   selectedEnvironment.value = env;
+  environmentHealth.value = environmentHealthMap[env.id];
+  loadSelectedEnvironmentHealth();
   resetRequestControlForm();
+};
+
+const loadSelectedEnvironmentHealth = async () => {
+  const environmentId = selectedEnvironment.value?.id;
+  if (!environmentId) {
+    environmentHealth.value = undefined;
+    return;
+  }
+  environmentHealth.value = environmentHealthMap[environmentId];
+  try {
+    const { data } = await platformApi.environmentHealth(environmentId);
+    if (Number(data?.environment) !== Number(environmentId)) return;
+    environmentHealthMap[environmentId] = data;
+    if (selectedEnvironment.value?.id === environmentId) environmentHealth.value = data;
+  } catch {
+    if (selectedEnvironment.value?.id === environmentId) environmentHealth.value = undefined;
+  }
+};
+
+const runSelectedEnvironmentHealth = async () => {
+  const environmentId = selectedEnvironment.value?.id;
+  if (!environmentId) return;
+  checkingEnvironmentHealthId.value = environmentId;
+  try {
+    const { data } = await platformApi.runEnvironmentHealth(environmentId, { force: true });
+    if (Number(data?.environment) !== Number(environmentId)) return;
+    environmentHealthMap[environmentId] = data;
+    if (selectedEnvironment.value?.id === environmentId) environmentHealth.value = data;
+    ElMessage.success(`${data?.environment_name || "当前环境"}健康检查完成`);
+  } finally {
+    if (checkingEnvironmentHealthId.value === environmentId) checkingEnvironmentHealthId.value = undefined;
+  }
 };
 
 const load = async () => {
@@ -494,6 +601,7 @@ const load = async () => {
     platforms.value = unwrapList(platformResp.data);
     modules.value = unwrapList(moduleResp.data);
     selectedEnvironment.value = environments.value.find((item) => item.id === selectedEnvironment.value?.id) || environments.value[0];
+    await loadSelectedEnvironmentHealth();
     resetRequestControlForm();
   } finally {
     loading.value = false;
@@ -882,6 +990,161 @@ onMounted(load);
 </script>
 
 <style scoped>
+.env-health-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-check-button {
+  --el-button-bg-color: var(--brand);
+  --el-button-border-color: var(--brand);
+  --el-button-text-color: #fff;
+  --el-button-hover-bg-color: var(--brand-hover);
+  --el-button-hover-border-color: var(--brand-hover);
+  --el-button-hover-text-color: #fff;
+  --el-button-active-bg-color: var(--brand-dark);
+  --el-button-active-border-color: var(--brand-dark);
+  --el-button-active-text-color: #fff;
+}
+
+.secondary-item-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.environment-health-panel {
+  border-color: #dbeafe;
+}
+
+.environment-health-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.health-metric {
+  min-height: 94px;
+  padding: 13px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.health-metric span,
+.health-metric em {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.health-metric strong {
+  display: block;
+  margin: 8px 0 3px;
+  color: #1f2937;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.health-metric strong.success {
+  color: #059669;
+}
+
+.health-metric strong.warning {
+  color: #d97706;
+}
+
+.health-metric strong.danger {
+  color: #dc2626;
+}
+
+.environment-health-card {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.environment-health-panel .environment-health-card {
+  margin-top: 0;
+}
+
+.environment-health-card.empty {
+  border-style: dashed;
+  background: #fff;
+}
+
+.environment-health-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #334155;
+  margin-bottom: 10px;
+}
+
+.environment-health-summary span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.environment-health-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.environment-health-check {
+  min-height: 76px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.environment-health-check.passed {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.environment-health-check.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.environment-health-check.failed {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.environment-health-check b,
+.environment-health-check span,
+.environment-health-check em {
+  display: block;
+}
+
+.environment-health-check b {
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.environment-health-check span {
+  color: #475569;
+  font-size: 12px;
+}
+
+.environment-health-check em {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+}
+
 .run-log-panel {
   display: flex;
   flex-direction: column;
@@ -937,5 +1200,17 @@ onMounted(load);
   font-family: Consolas, "Courier New", monospace;
   font-size: 12px;
   line-height: 1.6;
+}
+
+@media (max-width: 1180px) {
+  .environment-health-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .environment-health-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
