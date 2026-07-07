@@ -47,10 +47,22 @@
             <el-descriptions-item label="状态码">{{ responseStatus }}</el-descriptions-item>
             <el-descriptions-item label="耗时">{{ responseElapsed }}</el-descriptions-item>
           </el-descriptions>
+          <div v-if="diagnosisVisible" class="case-diagnosis-card" :class="diagnosisSeverityClass">
+            <div class="case-diagnosis-title">
+              <strong>{{ diagnosis.failure_label || "失败归因" }}</strong>
+              <span v-if="diagnosis.is_environment_issue">疑似环境问题</span>
+              <span v-if="diagnosis.retry_suggested">建议重试</span>
+            </div>
+            <p>{{ diagnosis.failure_summary }}</p>
+            <p>{{ diagnosis.failure_advice }}</p>
+          </div>
           <el-tabs v-model="responseTab" class="response-tabs">
             <el-tab-pane label="Body" name="body"><JsonPreview :value="responseBody" empty-text="无响应体" /></el-tab-pane>
             <el-tab-pane label="Headers" name="headers"><JsonPreview :value="responseHeaders" empty-text="无响应头" /></el-tab-pane>
             <el-tab-pane label="断言结果" name="assertions"><AssertionResultPreview :rows="assertionRows" /></el-tab-pane>
+            <el-tab-pane label="诊断" name="diagnosis">
+              <JsonPreview :value="diagnosis" empty-text="暂无诊断信息" />
+            </el-tab-pane>
             <el-tab-pane label="Logs" name="logs"><LogPreview :rows="logRows" /></el-tab-pane>
           </el-tabs>
         </template>
@@ -89,6 +101,9 @@ const responseBody = computed(() => props.result?.response?.body);
 const responseHeaders = computed(() => props.result?.response?.headers);
 const assertionRows = computed(() => props.result?.assertions || []);
 const logRows = computed(() => props.result?.logs || []);
+const diagnosis = computed(() => props.result?.diagnosis || props.result?.response?.diagnosis || {});
+const diagnosisVisible = computed(() => Boolean(diagnosis.value?.failure_type));
+const diagnosisSeverityClass = computed(() => `diagnosis-${diagnosis.value?.severity || "warning"}`);
 
 const normalizeRows = (rows: any) => {
   if (Array.isArray(rows)) return rows;
@@ -194,6 +209,14 @@ const LogPreview = defineComponent({
 .assertion-row.failed b, .failed-text { color: var(--el-color-danger); }
 .assertion-row span, .assertion-row em, .empty-lite { color: var(--el-text-color-secondary); }
 .assertion-row em { font-style: normal; font-size: 12px; }
+.case-diagnosis-card { margin: 12px 0; padding: 12px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-lighter); }
+.case-diagnosis-card.diagnosis-warning { border-color: var(--el-color-warning-light-5); background: var(--el-color-warning-light-9); }
+.case-diagnosis-card.diagnosis-error { border-color: var(--el-color-danger-light-5); background: var(--el-color-danger-light-9); }
+.case-diagnosis-card.diagnosis-info { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
+.case-diagnosis-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.case-diagnosis-title span { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 999px; color: var(--el-color-warning); background: var(--el-color-warning-light-8); font-size: 12px; font-weight: 600; }
+.case-diagnosis-card p { margin: 6px 0 0; color: var(--el-text-color-regular); line-height: 1.55; }
+.case-diagnosis-card p:last-child { color: var(--el-text-color-secondary); }
 @media (max-width: 980px) { .debug-panels { grid-template-columns: 1fr; } }
 </style>
 

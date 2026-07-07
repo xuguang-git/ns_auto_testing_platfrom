@@ -2,7 +2,7 @@
   <div class="app-shell">
     <aside class="app-sidebar">
       <RouterLink class="brand" to="/dashboard">
-        <span class="brand-mark brand-image"><img src="/system-icon.jpg" alt="NS" /></span>
+        <span class="brand-mark brand-image"><img src="/system-icon.png" alt="NS" /></span>
         <span class="brand-name">NS-ATP</span>
       </RouterLink>
 

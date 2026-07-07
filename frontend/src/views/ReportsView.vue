@@ -49,6 +49,49 @@
         <div><strong>{{ selectedRun.summary?.skipped || 0 }}</strong><span>跳过</span></div>
       </div>
 
+      <section class="report-diagnosis-card" :class="{ muted: !reportHasFailureAttribution }">
+        <div>
+          <strong>报告归因</strong>
+          <p>{{ reportDiagnosisText }}</p>
+        </div>
+        <div class="report-diagnosis-tags">
+          <span v-for="item in reportFailureTypeItems" :key="item.type">{{ failureTypeLabel(item.type) }} {{ item.count }}</span>
+          <span v-if="reportDiagnosis.environment_issue_count">疑似环境问题 {{ reportDiagnosis.environment_issue_count }}</span>
+          <span v-if="reportDiagnosis.retry_suggested_count">建议重试 {{ reportDiagnosis.retry_suggested_count }}</span>
+          <span v-if="selectedRunFailedCount === 0">无失败</span>
+          <span v-else-if="!reportHasFailureAttribution">待新执行沉淀</span>
+        </div>
+      </section>
+
+      <section class="report-diagnosis-board">
+        <div class="report-diagnosis-panel">
+          <div class="panel-title">
+            <strong>失败原因分布</strong>
+            <span>{{ selectedRunFailedCount ? `${selectedRunFailedCount} 个失败步骤` : "本次无失败" }}</span>
+          </div>
+          <div v-if="reportFailureTypeRows.length" class="diagnosis-dist-list">
+            <div v-for="item in reportFailureTypeRows" :key="item.type" class="diagnosis-dist-row">
+              <span>{{ failureTypeLabel(item.type) }}</span>
+              <div class="diagnosis-dist-track"><i :style="{ width: item.percent + '%' }"></i></div>
+              <b>{{ item.count }}</b>
+            </div>
+          </div>
+          <el-empty v-else description="暂无失败原因分布" :image-size="72" />
+        </div>
+        <div class="report-diagnosis-panel">
+          <div class="panel-title">
+            <strong>建议处理方向</strong>
+            <span>{{ reportDiagnosisActionLabel }}</span>
+          </div>
+          <div class="diagnosis-action-list">
+            <div v-for="item in reportDiagnosisActions" :key="item.title" class="diagnosis-action-item">
+              <b>{{ item.title }}</b>
+              <span>{{ item.text }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="report-step-groups">
         <section v-for="group in stepGroups" :key="group.name" class="report-step-group" :class="{ collapsed: isGroupCollapsed(group) }">
           <header class="report-step-group-head" @click="toggleGroup(group)">
@@ -79,6 +122,12 @@
               </template>
             </el-table-column>
             <el-table-column prop="duration_ms" label="耗时(ms)" width="120" />
+            <el-table-column label="失败类型" width="130">
+              <template #default="{ row }">
+                <span v-if="stepDiagnosis(row).failure_type" class="diagnosis-type-tag">{{ stepDiagnosis(row).failure_label || failureTypeLabel(stepDiagnosis(row).failure_type) }}</span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="接口错误" min-width="240" show-overflow-tooltip>
               <template #default="{ row }">{{ stepErrorText(row) || "-" }}</template>
             </el-table-column>
@@ -132,6 +181,108 @@ const filteredRuns = computed(() => {
 });
 const stepGroups = computed(() => selectedRun.value?.step_groups?.length ? selectedRun.value.step_groups : fallbackStepGroups(selectedRun.value?.steps || []));
 const emptyReportText = computed(() => routeRunId.value ? "报告不存在或已被删除" : "暂无报告");
+const storedReportDiagnosis = computed(() => selectedRun.value?.summary?.diagnosis || selectedRun.value?.report?.diagnosis || {});
+const reportDiagnosis = computed(() => {
+  if (Object.keys(storedReportDiagnosis.value || {}).length) return storedReportDiagnosis.value;
+  return deriveReportDiagnosisFromSteps(stepGroups.value.flatMap((group: any) => group.steps || []));
+});
+const reportFailureTypeItems = computed(() => Object.entries(reportDiagnosis.value.failure_type_counts || {}).map(([type, count]) => ({ type, count: Number(count || 0) })).filter((item) => item.count > 0));
+const reportFailureTypeRows = computed(() => {
+  const max = Math.max(...reportFailureTypeItems.value.map((item) => item.count), 1);
+  return reportFailureTypeItems.value.map((item) => ({ ...item, percent: Math.max(8, Math.round((item.count / max) * 100)) }));
+});
+const selectedRunFailedCount = computed(() => Number(selectedRun.value?.summary?.failed || 0));
+const reportHasFailureAttribution = computed(() => reportFailureTypeItems.value.length > 0 || Number(reportDiagnosis.value.environment_issue_count || 0) > 0 || Number(reportDiagnosis.value.retry_suggested_count || 0) > 0);
+const reportDiagnosisActionLabel = computed(() => selectedRunFailedCount.value ? "按失败类型优先处理" : "无需处理");
+const reportDiagnosisActions = computed(() => {
+  if (selectedRunFailedCount.value === 0) {
+    return [
+      { title: "执行结果正常", text: "本次套件全部通过，报告归因区保留展示，便于出现失败时直接查看诊断沉淀。" },
+      { title: "持续观察趋势", text: "后续可结合定时任务结果查看同一套件的失败类型变化。" },
+    ];
+  }
+  if (!reportHasFailureAttribution.value) {
+    return [
+      { title: "重新执行沉淀", text: "历史报告缺少诊断字段，重新执行后会写入步骤级归因和报告级汇总。" },
+      { title: "先看步骤错误", text: "可先在步骤明细中查看接口错误摘要，判断是否为环境、鉴权或断言问题。" },
+    ];
+  }
+  const top = reportDiagnosis.value.top_failure_type;
+  return [
+    { title: top ? `优先处理：${failureTypeLabel(top)}` : "优先处理高频失败", text: "先处理数量最多的失败类型，再重跑受影响用例，避免被次要失败干扰。" },
+    { title: "需要重试判断", text: Number(reportDiagnosis.value.retry_suggested_count || 0) > 0 ? "存在网络、超时或服务异常类失败，修复或恢复后建议重试。" : "当前归因未提示必须重试，优先检查配置、断言或业务响应。" },
+  ];
+});
+const reportDiagnosisText = computed(() => {
+  if (selectedRunFailedCount.value === 0) return "本次报告全部通过，无需进行失败归因。若后续出现失败，系统会按环境、前置、鉴权、断言、网络和服务异常等维度生成归因摘要。";
+  if (!reportHasFailureAttribution.value) return "当前报告存在失败步骤，但历史数据未保存归因明细。重新执行后会自动沉淀环境、前置、鉴权、断言和网络等归因信息。";
+  const top = reportDiagnosis.value.top_failure_type;
+  if (top) return `主要失败原因：${failureTypeLabel(top)}。建议优先处理数量最多的失败类型，再重跑受影响用例。`;
+  return "本次执行存在失败归因数据，请查看步骤明细定位具体原因。";
+});
+
+const failureTypeText: Record<string, string> = {
+  auth_error: "鉴权失败",
+  assertion_failed: "断言失败",
+  server_error: "服务异常",
+  client_error: "请求错误",
+  network_error: "网络不可达",
+  connection_error: "网络不可达",
+  ssl_error: "证书异常",
+  connect_timeout: "连接超时",
+  read_timeout: "响应超时",
+  timeout: "请求超时",
+  pre_request_error: "前置失败",
+  data_prepare_error: "数据准备失败",
+  request_blocked: "请求拦截",
+  case_config_error: "配置错误",
+  unknown_error: "未分类",
+};
+const failureTypeLabel = (type?: string) => type ? (failureTypeText[type] || type) : "-";
+const stepDiagnosis = (step: any) => step?.response?.diagnosis || deriveStepDiagnosis(step);
+
+const deriveStepDiagnosis = (step: any) => {
+  if (step?.status !== "failed") return {};
+  const response = step?.response || {};
+  const statusCode = Number(response.status_code || response.status || response.http_status || 0);
+  const errorText = stepErrorText(step);
+  const sourceText = `${errorText} ${response.error || ""} ${response.message || ""}`.toLowerCase();
+  let failureType = "unknown_error";
+  if (statusCode === 401 || statusCode === 403 || /auth|token|鉴权|认证|授权|登录/.test(sourceText)) failureType = "auth_error";
+  else if (statusCode >= 500) failureType = "server_error";
+  else if (statusCode >= 400) failureType = "client_error";
+  else if (/assert|断言|expect/.test(sourceText) || (step?.assertions || []).some((item: any) => item?.passed === false)) failureType = "assertion_failed";
+  else if (/前置|pre[-_\s]?request/.test(sourceText)) failureType = "pre_request_error";
+  else if (/数据源|数据库|sql|database|mysql|postgres/.test(sourceText)) failureType = "data_prepare_error";
+  else if (/ssl|证书|certificate/.test(sourceText)) failureType = "ssl_error";
+  else if (/timeout|timed out|超时/.test(sourceText)) failureType = "timeout";
+  else if (/network|connect|dns|连接|无法访问|不可达/.test(sourceText)) failureType = "network_error";
+  return {
+    failure_type: failureType,
+    failure_label: failureTypeLabel(failureType),
+    summary: errorText || "历史报告未保存诊断详情，已根据状态和错误摘要做轻量归类。",
+  };
+};
+
+const deriveReportDiagnosisFromSteps = (steps: any[]) => {
+  const failureTypeCounts: Record<string, number> = {};
+  let environmentIssueCount = 0;
+  let retrySuggestedCount = 0;
+  for (const step of steps) {
+    const diagnosis = deriveStepDiagnosis(step);
+    if (!diagnosis.failure_type) continue;
+    failureTypeCounts[diagnosis.failure_type] = (failureTypeCounts[diagnosis.failure_type] || 0) + 1;
+    if (["network_error", "connection_error", "ssl_error", "connect_timeout", "read_timeout", "timeout"].includes(diagnosis.failure_type)) environmentIssueCount += 1;
+    if (["server_error", "network_error", "connection_error", "connect_timeout", "read_timeout", "timeout"].includes(diagnosis.failure_type)) retrySuggestedCount += 1;
+  }
+  const topFailureType = Object.entries(failureTypeCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+  return {
+    failure_type_counts: failureTypeCounts,
+    environment_issue_count: environmentIssueCount,
+    retry_suggested_count: retrySuggestedCount,
+    top_failure_type: topFailureType,
+  };
+};
 
 const runStatusText = (status: string) => ({ pending: "待执行", running: "执行中", completed: "完成", failed: "失败" }[status] || status || "未知");
 const runStatusClass = (status: string) => ({ completed: "success", failed: "danger", running: "warning", pending: "muted" }[status] || "muted");
@@ -244,6 +395,7 @@ const stepRequest = (step: any) => {
 const stepResult = (step: any) => ({
   ok: step?.status === "passed",
   response: step?.response || {},
+  diagnosis: stepDiagnosis(step),
   assertions: step?.assertions || [],
   logs: step?.logs || [],
 });
@@ -308,3 +460,163 @@ watch(() => route.query.run, () => {
 
 onMounted(loadRuns);
 </script>
+
+<style scoped>
+.report-diagnosis-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 8px;
+  background: var(--el-color-warning-light-9);
+}
+
+.report-diagnosis-card.muted {
+  border-color: var(--el-border-color);
+  background: var(--el-fill-color-light);
+}
+
+.report-diagnosis-card strong {
+  color: var(--el-text-color-primary);
+}
+
+.report-diagnosis-card p {
+  margin: 6px 0 0;
+  color: var(--el-text-color-regular);
+}
+
+.report-diagnosis-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.report-diagnosis-tags span,
+.diagnosis-type-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-8);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.diagnosis-type-tag {
+  color: var(--el-color-danger);
+  background: var(--el-color-danger-light-9);
+}
+
+.report-diagnosis-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.report-diagnosis-panel {
+  padding: 14px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-title strong {
+  color: var(--el-text-color-primary);
+}
+
+.panel-title span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.diagnosis-dist-list,
+.diagnosis-action-list {
+  display: grid;
+  gap: 10px;
+}
+
+.diagnosis-dist-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 10px;
+}
+
+.diagnosis-dist-row span {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.diagnosis-dist-row b {
+  color: var(--el-text-color-primary);
+  text-align: right;
+}
+
+.diagnosis-dist-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--el-fill-color-light);
+}
+
+.diagnosis-dist-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--el-color-warning);
+}
+
+.diagnosis-action-item {
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+
+.diagnosis-action-item b,
+.diagnosis-action-item span {
+  display: block;
+}
+
+.diagnosis-action-item b {
+  margin-bottom: 4px;
+  color: var(--el-text-color-primary);
+}
+
+.diagnosis-action-item span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 980px) {
+  .report-diagnosis-card {
+    flex-direction: column;
+  }
+
+  .report-diagnosis-tags {
+    justify-content: flex-start;
+  }
+
+  .report-diagnosis-board {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
