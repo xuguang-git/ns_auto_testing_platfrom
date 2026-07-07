@@ -33,6 +33,143 @@ BLOCKED_REQUEST_HEADERS = {
     "upgrade",
 }
 SENSITIVE_LOG_KEYS = {"authorization", "cookie", "password", "passwd", "secret", "token", "access_token", "refresh_token", "username", "email", "account"}
+DIAGNOSIS_RULES: dict[str, dict[str, Any]] = {
+    "network_error": {
+        "label": "网络不可达",
+        "summary": "平台无法连接目标服务。",
+        "advice": "请检查环境 Base URL、DNS、网络白名单和被测服务状态。",
+        "environment": True,
+        "retry": True,
+        "owner": "环境/网络",
+        "severity": "error",
+    },
+    "ssl_error": {
+        "label": "证书或 TLS 异常",
+        "summary": "目标服务 HTTPS 握手失败。",
+        "advice": "请检查证书、TLS 配置、代理证书和服务端 HTTPS 配置。",
+        "environment": True,
+        "retry": False,
+        "owner": "环境/运维",
+        "severity": "error",
+    },
+    "connect_timeout": {
+        "label": "连接超时",
+        "summary": "连接目标服务超时。",
+        "advice": "请检查目标地址、网络连通性、白名单和服务启动状态。",
+        "environment": True,
+        "retry": True,
+        "owner": "环境/被测服务",
+        "severity": "warning",
+    },
+    "read_timeout": {
+        "label": "响应超时",
+        "summary": "目标服务响应超时。",
+        "advice": "请检查接口耗时、查询条件、后端服务负载和超时配置。",
+        "environment": False,
+        "retry": True,
+        "owner": "被测服务/接口",
+        "severity": "warning",
+    },
+    "timeout": {
+        "label": "请求超时",
+        "summary": "请求目标服务超时。",
+        "advice": "请检查接口耗时、网络状态和超时时间配置。",
+        "environment": False,
+        "retry": True,
+        "owner": "被测服务/环境",
+        "severity": "warning",
+    },
+    "connection_error": {
+        "label": "网络不可达",
+        "summary": "平台无法连接目标服务。",
+        "advice": "请检查目标地址、网络、DNS、证书或访问白名单。",
+        "environment": True,
+        "retry": True,
+        "owner": "环境/网络",
+        "severity": "error",
+    },
+    "auth_error": {
+        "label": "鉴权失败",
+        "summary": "当前请求未通过被测服务鉴权。",
+        "advice": "请检查环境前置登录、Token 缓存、Auth 配置和请求头注入规则。",
+        "environment": True,
+        "retry": False,
+        "owner": "环境配置/接口鉴权",
+        "severity": "warning",
+    },
+    "pre_request_error": {
+        "label": "前置操作失败",
+        "summary": "环境前置操作执行失败。",
+        "advice": "请检查前置请求路径、账号变量、断言和变量提取配置。",
+        "environment": True,
+        "retry": False,
+        "owner": "环境配置",
+        "severity": "warning",
+    },
+    "data_prepare_error": {
+        "label": "测试数据准备失败",
+        "summary": "测试数据源执行失败。",
+        "advice": "请检查测试数据源、数据库连接、SQL 和变量提取规则。",
+        "environment": False,
+        "retry": False,
+        "owner": "测试数据",
+        "severity": "error",
+    },
+    "request_blocked": {
+        "label": "请求被环境控制拦截",
+        "summary": "当前环境不允许执行该请求方法。",
+        "advice": "请检查环境请求控制配置，确认是否允许该 HTTP 方法。",
+        "environment": False,
+        "retry": False,
+        "owner": "平台配置",
+        "severity": "warning",
+    },
+    "case_config_error": {
+        "label": "用例配置错误",
+        "summary": "请求配置不完整或格式不合法。",
+        "advice": "请检查 URL、变量、请求体、Header 和 Auth 配置。",
+        "environment": False,
+        "retry": False,
+        "owner": "用例维护",
+        "severity": "error",
+    },
+    "assertion_failed": {
+        "label": "断言失败",
+        "summary": "接口已返回，但断言未通过。",
+        "advice": "请对比实际响应和预期断言，确认是接口缺陷还是用例预期需要调整。",
+        "environment": False,
+        "retry": False,
+        "owner": "测试/开发",
+        "severity": "error",
+    },
+    "server_error": {
+        "label": "服务端异常",
+        "summary": "被测服务返回服务端异常。",
+        "advice": "请联系开发排查服务日志、接口异常和依赖服务状态。",
+        "environment": False,
+        "retry": True,
+        "owner": "开发/被测服务",
+        "severity": "error",
+    },
+    "client_error": {
+        "label": "客户端请求错误",
+        "summary": "被测服务认为当前请求不合法。",
+        "advice": "请检查路径、参数、请求体、权限和接口契约是否一致。",
+        "environment": False,
+        "retry": False,
+        "owner": "用例/接口契约",
+        "severity": "warning",
+    },
+    "unknown_error": {
+        "label": "未分类异常",
+        "summary": "当前失败暂未命中已知诊断规则。",
+        "advice": "请查看请求、响应和日志后人工确认，并补充诊断规则。",
+        "environment": False,
+        "retry": False,
+        "owner": "平台/人工确认",
+        "severity": "warning",
+    },
+}
 
 
 def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
@@ -52,6 +189,18 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
         extracted_variables.update(pre_variables)
     except requests.RequestException as exc:
         error_fields = _request_error_fields(exc)
+        if _is_data_prepare_error(exc):
+            error_fields = {
+                **error_fields,
+                "error": "测试数据准备失败，请检查测试数据源、数据库连接、SQL 和变量提取规则。",
+                "error_type": "data_prepare_error",
+                "data_prepare_error_detail": error_fields.get("error") or str(exc).strip(),
+            }
+        diagnosis = _build_failure_diagnosis(
+            error_fields.get("error_type") or "request_error",
+            error_fields.get("error") or str(exc),
+            request={"method": payload.get("method") or "GET", "url": payload.get("path") or payload.get("url") or "/"},
+        )
         return {
             "ok": False,
             "passed": False,
@@ -61,11 +210,13 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "variables": extracted_variables,
             "runtime_variables": _safe_variable_snapshot(variables),
             "logs": [*data_logs, *_request_error_logs(exc)],
+            "diagnosis": diagnosis,
             **error_fields,
         }
     method = (payload.get("method") or "GET").upper()
     if environment and not _is_method_allowed_by_environment(environment, method):
         message = f"当前环境不允许执行 {method} 请求，请联系管理员"
+        diagnosis = _build_failure_diagnosis("request_blocked", message, request={"method": method, "url": payload.get("path") or payload.get("url") or "/"})
         return {
             "ok": False,
             "passed": False,
@@ -76,6 +227,8 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "runtime_variables": _safe_variable_snapshot(variables),
             "logs": [*data_logs, message],
             "error": message,
+            "error_type": "request_blocked",
+            "diagnosis": diagnosis,
         }
     path = payload.get("path") or payload.get("url") or "/"
     base_url = _get_base_url(environment, platform)
@@ -132,6 +285,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
         extracted_variables.update(post_variables)
         assertion_results = evaluate_assertions(payload.get("assertions") or [], resp, response_body, elapsed_ms)
         passed = all(item["passed"] for item in assertion_results)
+        diagnosis = _diagnose_response(resp.status_code, assertion_results, method, resp.request.url)
         return {
             "ok": True,
             "passed": passed,
@@ -155,6 +309,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "variables": extracted_variables,
             "runtime_variables": _safe_variable_snapshot(variables),
             "logs": [*data_logs, *session_logs, f"{method} {resp.request.url}", f"HTTP {resp.status_code} {elapsed_ms}ms"],
+            "diagnosis": diagnosis,
         }
     except requests.RequestException as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -168,6 +323,19 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
                 "pre_request_error_detail": error_fields.get("error") or str(exc).strip(),
             }
             logs = [*data_logs, *session_logs, PRE_REQUEST_FAILURE_MESSAGE]
+        elif _is_data_prepare_error(exc):
+            error_fields = {
+                **error_fields,
+                "error": "测试数据准备失败，请检查测试数据源、数据库连接、SQL 和变量提取规则。",
+                "error_type": "data_prepare_error",
+                "data_prepare_error_detail": error_fields.get("error") or str(exc).strip(),
+            }
+            logs = [*data_logs, "测试数据准备失败，请检查关联数据源配置。"]
+        diagnosis = _build_failure_diagnosis(
+            error_fields.get("error_type") or "request_error",
+            error_fields.get("error") or str(exc),
+            request={"method": method, "url": url},
+        )
         return {
             "ok": False,
             "passed": False,
@@ -177,6 +345,7 @@ def execute_debug_request(payload: dict[str, Any]) -> dict[str, Any]:
             "variables": extracted_variables,
             "runtime_variables": _safe_variable_snapshot(variables),
             "logs": logs,
+            "diagnosis": diagnosis,
             **error_fields,
         }
 
@@ -190,6 +359,56 @@ def _request_error_fields(exc: requests.RequestException) -> dict[str, Any]:
     if error_type != "request_error":
         logger.warning("API debug outbound request failed: %s", detail or message, exc_info=exc)
     return fields
+
+
+def _diagnosis_type_from_status(status_code: int) -> str | None:
+    if status_code in (401, 403):
+        return "auth_error"
+    if status_code >= 500:
+        return "server_error"
+    if status_code >= 400:
+        return "client_error"
+    return None
+
+
+def _diagnose_response(status_code: int, assertions: list[dict[str, Any]], method: str, url: str) -> dict[str, Any]:
+    diagnosis_type = _diagnosis_type_from_status(status_code)
+    if not diagnosis_type and any(not item.get("passed") for item in assertions):
+        diagnosis_type = "assertion_failed"
+    if not diagnosis_type:
+        return {}
+    return _build_failure_diagnosis(diagnosis_type, request={"method": method, "url": url}, status_code=status_code)
+
+
+def _build_failure_diagnosis(
+    failure_type: str,
+    detail: str = "",
+    request: dict[str, Any] | None = None,
+    status_code: int | None = None,
+) -> dict[str, Any]:
+    normalized_type = failure_type if failure_type in DIAGNOSIS_RULES else "unknown_error"
+    rule = DIAGNOSIS_RULES[normalized_type]
+    evidence: list[dict[str, Any]] = []
+    if status_code is not None:
+        evidence.append({"key": "status_code", "value": status_code})
+    if request:
+        if request.get("method"):
+            evidence.append({"key": "method", "value": request["method"]})
+        if request.get("url"):
+            evidence.append({"key": "url", "value": _mask_url_for_log(str(request["url"]))})
+    if detail:
+        evidence.append({"key": "detail", "value": _safe_log_text(detail, max_length=500)})
+    return {
+        "failure_type": normalized_type,
+        "failure_label": rule["label"],
+        "failure_summary": rule["summary"],
+        "failure_advice": rule["advice"],
+        "is_environment_issue": rule["environment"],
+        "retry_suggested": rule["retry"],
+        "owner_hint": rule["owner"],
+        "severity": rule["severity"],
+        "evidence": evidence,
+    }
 
 
 def _request_error_logs(exc: requests.RequestException) -> list[str]:
@@ -226,6 +445,16 @@ def _is_pre_request_error(exc: requests.RequestException) -> bool:
     return bool(getattr(exc, "is_pre_request_error", False))
 
 
+def _data_prepare_exception(message: str) -> requests.RequestException:
+    exc = requests.RequestException(message)
+    setattr(exc, "is_data_prepare_error", True)
+    return exc
+
+
+def _is_data_prepare_error(exc: requests.RequestException) -> bool:
+    return bool(getattr(exc, "is_data_prepare_error", False))
+
+
 def _apply_test_data_sources(source_ids: list[Any], variables: dict[str, Any], phase: str) -> tuple[list[str], dict[str, Any]]:
     logs: list[str] = []
     extracted: dict[str, Any] = {}
@@ -250,7 +479,7 @@ def _apply_test_data_sources(source_ids: list[Any], variables: dict[str, Any], p
         try:
             result = execute_test_data_source(source, variables)
         except Exception as exc:
-            raise requests.RequestException(f"Test data source [{source.name}] failed: {exc}") from exc
+            raise _data_prepare_exception(f"Test data source [{source.name}] failed: {exc}") from exc
         source_variables = result.get("variables") or {}
         variables.update(source_variables)
         extracted.update(source_variables)

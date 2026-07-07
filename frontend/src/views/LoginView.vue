@@ -1,7 +1,7 @@
 <template>
   <div class="login-page">
     <section class="login-brand">
-      <img src="/system-icon.jpg" alt="NS" />
+      <img src="/system-icon.png" alt="NS" />
       <h1>NS-ATP</h1>
       <p>自动化测试平台</p>
     </section>

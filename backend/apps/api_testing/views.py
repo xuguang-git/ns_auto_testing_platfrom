@@ -1,7 +1,16 @@
+import json
+import time
+
+from django.conf import settings
+from django.core.cache import cache
+from django.http import HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import decorators, response, status, viewsets
+from rest_framework import exceptions as drf_exceptions
 
 from apps.accounts.models import AuditLog
 from apps.accounts.permissions import action_permission
+from apps.accounts.security import authenticate_access_token, get_access_token_from_request
 from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiTestCase
 from apps.api_testing.serializers import (
     ApiCaseSerializer,
@@ -13,10 +22,167 @@ from apps.api_testing.serializers import (
     ApiSuiteSerializer,
     ApiTestCaseSerializer,
 )
+from apps.api_testing.mock_security import verify_mock_rule_token
 from apps.api_testing.services import execute_debug_request
 from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.services import get_default_project
+
+
+MOCK_BLOCKED_RESPONSE_HEADERS = {
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "upgrade",
+}
+
+
+def _json_error(message: str, status_code: int) -> JsonResponse:
+    return JsonResponse({"message": message}, status=status_code, json_dumps_params={"ensure_ascii": False})
+
+
+def _mock_headers(headers) -> dict[str, str]:
+    if isinstance(headers, dict):
+        items = headers.items()
+    elif isinstance(headers, list):
+        items = ((item.get("key"), item.get("value")) for item in headers if isinstance(item, dict) and item.get("enabled", True) is not False)
+    else:
+        items = []
+    result = {}
+    for key, value in items:
+        name = str(key or "").strip()
+        if not name or name.lower() in MOCK_BLOCKED_RESPONSE_HEADERS:
+            continue
+        result[name] = str(value if value is not None else "")
+    return result
+
+
+def _mock_body_response(rule: ApiMockRule) -> HttpResponse:
+    headers = _mock_headers(rule.headers)
+    content_type = headers.pop("Content-Type", headers.pop("content-type", "application/json; charset=utf-8"))
+    body = rule.response_body
+    if isinstance(body, (dict, list)):
+        content = json.dumps(body, ensure_ascii=False)
+    elif body is None:
+        content = ""
+    else:
+        content = str(body)
+    resp = HttpResponse(content, status=rule.status_code, content_type=content_type)
+    for key, value in headers.items():
+        resp[key] = value
+    return resp
+
+
+def _is_active_user(user) -> bool:
+    profile = getattr(user, "profile", None)
+    return bool(user and user.is_authenticated and user.is_active and (not profile or profile.status == "active"))
+
+
+def _is_authenticated_mock_request(request) -> bool:
+    if _is_active_user(request.user):
+        return True
+    try:
+        record = authenticate_access_token(get_access_token_from_request(request))
+    except drf_exceptions.AuthenticationFailed:
+        return False
+    return _is_active_user(record.user)
+
+
+def _client_ip(request) -> str:
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def _mock_rate_limited(request, rule: ApiMockRule) -> bool:
+    limit = max(1, int(getattr(settings, "API_MOCK_RATE_LIMIT_PER_MINUTE", 120)))
+    key = f"api-mock-rate:{rule.id}:{_client_ip(request)}"
+    count = cache.get(key, 0) + 1
+    cache.set(key, count, 60)
+    return count > limit
+
+
+def _can_access_mock(request, rule: ApiMockRule) -> bool:
+    if _is_authenticated_mock_request(request):
+        return True
+    if not getattr(settings, "API_MOCK_PUBLIC_ACCESS_ENABLED", False):
+        return False
+    token = request.GET.get("token") or request.headers.get("X-Mock-Token", "")
+    return verify_mock_rule_token(rule, token)
+
+
+def _normalized_mock_path(path: str) -> str:
+    value = f"/{str(path or '').strip().lstrip('/')}"
+    return value.rstrip("/") or "/"
+
+
+def _proxy_api_candidates(proxy_path: str) -> list[str]:
+    normalized = _normalized_mock_path(proxy_path)
+    return [normalized] if normalized == "/" else [normalized, f"{normalized}/"]
+
+
+def _resolve_proxy_rule(request, proxy_path: str):
+    api = ApiDefinition.objects.filter(
+        method=request.method.upper(),
+        path__in=_proxy_api_candidates(proxy_path),
+        is_active=True,
+    ).order_by("id").first()
+    if not api:
+        return None, _json_error("Mock 接口未命中", 404)
+
+    rules = list(api.mock_rules.filter(enabled=True).order_by("id"))
+    if not rules:
+        return None, _json_error("Mock 规则未命中", 404)
+
+    if _is_authenticated_mock_request(request):
+        return rules[0], None
+
+    if not getattr(settings, "API_MOCK_PUBLIC_ACCESS_ENABLED", False):
+        return None, _json_error("Mock 访问未授权", 403)
+
+    token = request.GET.get("token") or request.headers.get("X-Mock-Token", "")
+    for rule in rules:
+        if verify_mock_rule_token(rule, token):
+            return rule, None
+    return None, _json_error("Mock 访问未授权", 403)
+
+
+def _serve_mock_rule(request, rule: ApiMockRule):
+    if _mock_rate_limited(request, rule):
+        return _json_error("Mock 访问过于频繁，请稍后重试", 429)
+    if rule.delay_ms:
+        time.sleep(min(rule.delay_ms, getattr(settings, "API_MOCK_MAX_DELAY_MS", 5000)) / 1000)
+    return _mock_body_response(rule)
+
+
+@csrf_exempt
+def mock_api_response(request, api_id: int, rule_id: int):
+    rule = ApiMockRule.objects.select_related("api").filter(pk=rule_id, api_id=api_id).first()
+    if not rule:
+        return _json_error("Mock 规则不存在", 404)
+    if not _can_access_mock(request, rule):
+        return _json_error("Mock 访问未授权", 403)
+    if _mock_rate_limited(request, rule):
+        return _json_error("Mock 访问过于频繁，请稍后重试", 429)
+    if not rule.enabled:
+        return _json_error("Mock 规则未启用", 404)
+    if request.method.upper() != rule.api.method.upper():
+        return _json_error(f"Mock 请求方式不匹配，应使用 {rule.api.method}", 405)
+    return _serve_mock_rule(request, rule)
+
+
+@csrf_exempt
+def mock_proxy_response(request, proxy_path: str = ""):
+    rule, error = _resolve_proxy_rule(request, proxy_path)
+    if error:
+        return error
+    return _serve_mock_rule(request, rule)
 
 
 class ApiModuleViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
