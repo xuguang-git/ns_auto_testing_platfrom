@@ -5,9 +5,20 @@
         <strong>报告列表</strong>
         <span>共 {{ runs.length }} 份</span>
       </div>
+      <div class="report-search-controls">
+      <div class="report-filter-selects">
+        <el-select v-model="reportDatePreset" class="report-filter-select">
+          <el-option v-for="option in reportDatePresetOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+        <el-select v-model="reportStatusFilter" class="report-filter-select">
+          <el-option v-for="option in reportStatusOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+      </div>
       <el-input v-model="keyword" placeholder="搜索报告名称或套件名称" clearable class="report-search" />
+      <el-button class="report-search-button" type="primary" :loading="loading" @click="searchReports">搜索</el-button>
+      </div>
       <button
-        v-for="run in filteredRuns"
+        v-for="run in runs"
         :key="run.id"
         class="report-item"
         :class="{ active: selectedRun?.id === run.id }"
@@ -15,7 +26,7 @@
       >
         <div class="report-item-head">
           <strong>{{ reportName(run) }}</strong>
-          <span>{{ runStatusText(run.status) }}</span>
+          <span>{{ runStatusText(run.result_status || run.status) }}</span>
         </div>
         <div class="report-item-stats">套件：{{ run.suite_name || "-" }}</div>
         <div class="report-item-time">{{ formatDateTime(run.started_at || run.created_at) }}</div>
@@ -34,7 +45,7 @@
         <div>
           <h2>{{ reportName(selectedRun) }}</h2>
           <div class="report-run-meta">
-            <span :class="['report-meta-pill', runStatusClass(selectedRun.status)]"><b>状态</b>{{ runStatusText(selectedRun.status) }}</span>
+            <span :class="['report-meta-pill', runStatusClass(selectedRun.result_status || selectedRun.status)]"><b>状态</b>{{ runStatusText(selectedRun.result_status || selectedRun.status) }}</span>
             <span class="report-meta-pill"><b>触发方式</b>{{ triggerTypeText(selectedRun.trigger_type) }}</span>
             <span class="report-meta-pill"><b>总耗时</b>{{ selectedRun.duration_ms || 0 }}ms</span>
           </div>
@@ -42,6 +53,7 @@
         <div class="pass-circle">{{ selectedRun.summary?.pass_rate || 0 }}%</div>
       </div>
 
+      <template v-if="isRunDetailAvailable">
       <div class="stats-row">
         <div><strong>{{ selectedRun.summary?.total || 0 }}</strong><span>总数</span></div>
         <div><strong>{{ selectedRun.summary?.passed || 0 }}</strong><span>通过</span></div>
@@ -134,6 +146,11 @@
           </el-table>
         </section>
       </div>
+      </template>
+      <div v-else class="report-running-state" v-loading="detailLoading">
+        <strong>{{ runStatusText(selectedRun.result_status || selectedRun.status) }}</strong>
+        <span>报告执行完成后将自动加载详情。</span>
+      </div>
     </section>
     <el-empty v-else :description="emptyReportText" style="flex: 1" />
 
@@ -153,14 +170,41 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { platformApi, unwrapList } from "@/api/platform";
 import ApiCaseDebugDrawerContent from "@/components/ApiCaseDebugDrawerContent.vue";
 
 const loading = ref(false);
+const detailLoading = ref(false);
 const keyword = ref("");
+const formatDateValue = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+const reportDatePresetOptions = [
+  { label: "今天", value: "today" },
+  { label: "近3天", value: "last_3_days" },
+  { label: "近7天", value: "last_7_days" },
+  { label: "近30天", value: "last_30_days" },
+  { label: "本周", value: "this_week" },
+  { label: "本月", value: "this_month" },
+  { label: "本年", value: "this_year" },
+] as const;
+type ReportDatePreset = (typeof reportDatePresetOptions)[number]["value"];
+const reportDatePreset = ref<ReportDatePreset>("last_3_days");
+const reportStatusOptions = [
+  { label: "全部状态", value: "all" },
+  { label: "待执行", value: "pending" },
+  { label: "执行中", value: "running" },
+  { label: "成功", value: "success" },
+  { label: "失败", value: "failed" },
+] as const;
+type ReportStatusFilter = (typeof reportStatusOptions)[number]["value"];
+const reportStatusFilter = ref<ReportStatusFilter>("all");
 const runs = ref<any[]>([]);
 const selectedRun = ref<any>();
 const route = useRoute();
@@ -168,17 +212,23 @@ const router = useRouter();
 const stepDrawerVisible = ref(false);
 const activeStep = ref<any>();
 const expandedGroups = ref<Set<string>>(new Set());
+let detailRequestId = 0;
+let detailPollTimer: ReturnType<typeof setTimeout> | undefined;
 
 const reportName = (run: any) => run.report_name || `${run.suite_name || "测试报告"}${formatCompactTime(run.started_at || run.created_at) || run.id}`;
-const filteredRuns = computed(() => {
-  const value = keyword.value.trim().toLowerCase();
-  if (!value) return runs.value;
-  return runs.value.filter((run) => {
-    const name = reportName(run).toLowerCase();
-    const suiteName = String(run.suite_name || "").toLowerCase();
-    return name.includes(value) || suiteName.includes(value) || String(run.id).includes(value);
-  });
-});
+const getReportDateRange = (preset: ReportDatePreset) => {
+  const endDate = new Date();
+  endDate.setHours(0, 0, 0, 0);
+  const startDate = new Date(endDate);
+  if (preset === "last_3_days") startDate.setDate(startDate.getDate() - 2);
+  else if (preset === "last_7_days") startDate.setDate(startDate.getDate() - 6);
+  else if (preset === "last_30_days") startDate.setDate(startDate.getDate() - 29);
+  else if (preset === "this_week") startDate.setDate(startDate.getDate() - ((startDate.getDay() + 6) % 7));
+  else if (preset === "this_month") startDate.setDate(1);
+  else if (preset === "this_year") startDate.setMonth(0, 1);
+  return [formatDateValue(startDate), formatDateValue(endDate)];
+};
+const isRunDetailAvailable = computed(() => selectedRun.value?.detail_available === true);
 const stepGroups = computed(() => selectedRun.value?.step_groups?.length ? selectedRun.value.step_groups : fallbackStepGroups(selectedRun.value?.steps || []));
 const emptyReportText = computed(() => routeRunId.value ? "报告不存在或已被删除" : "暂无报告");
 const storedReportDiagnosis = computed(() => selectedRun.value?.summary?.diagnosis || selectedRun.value?.report?.diagnosis || {});
@@ -284,8 +334,8 @@ const deriveReportDiagnosisFromSteps = (steps: any[]) => {
   };
 };
 
-const runStatusText = (status: string) => ({ pending: "待执行", running: "执行中", completed: "完成", failed: "失败" }[status] || status || "未知");
-const runStatusClass = (status: string) => ({ completed: "success", failed: "danger", running: "warning", pending: "muted" }[status] || "muted");
+const runStatusText = (status: string) => ({ pending: "待执行", running: "执行中", success: "成功", completed: "完成", failed: "失败" }[status] || status || "未知");
+const runStatusClass = (status: string) => ({ success: "success", completed: "success", failed: "danger", running: "warning", pending: "muted" }[status] || "muted");
 const stepStatusText = (status: string) => ({ pending: "待执行", running: "执行中", passed: "通过", failed: "失败", skipped: "跳过" }[status] || status || "未知");
 const triggerTypeText = (type: string) => ({ manual: "手动", schedule: "定时", webhook: "Webhook" }[type] || type || "未知");
 const formatDateTime = (value?: string) => value ? value.replace("T", " ").slice(0, 19) : "";
@@ -416,22 +466,60 @@ const selectRun = (run?: any) => {
   expandedGroups.value = new Set();
 };
 
+const stopDetailPolling = () => {
+  if (!detailPollTimer) return;
+  clearTimeout(detailPollTimer);
+  detailPollTimer = undefined;
+};
+
+const updateListRun = (run: any) => {
+  const index = runs.value.findIndex((item) => item.id === run.id);
+  if (index >= 0) runs.value.splice(index, 1, { ...runs.value[index], ...run });
+  else runs.value.unshift(run);
+};
+
+const loadRunDetail = async (runId: number) => {
+  const requestId = ++detailRequestId;
+  detailLoading.value = true;
+  stopDetailPolling();
+  try {
+    const { data } = await platformApi.testRun(runId);
+    if (requestId !== detailRequestId) return;
+    updateListRun(data);
+    selectRun(data);
+    if (["pending", "running"].includes(data.status)) {
+      detailPollTimer = setTimeout(() => loadRunDetail(runId), 3000);
+    }
+  } catch {
+    // 请求拦截器已展示错误提示，保留当前选中报告供用户继续操作。
+  } finally {
+    if (requestId === detailRequestId) detailLoading.value = false;
+  }
+};
+
 const resolveSelectedRun = async () => {
   const targetId = routeRunId.value;
   if (!targetId) {
-    selectRun(runs.value[0]);
+    const latestRun = runs.value[0];
+    if (!latestRun) {
+      selectRun(undefined);
+      return;
+    }
+    selectRun(latestRun);
+    await loadRunDetail(latestRun.id);
     return;
   }
 
   const localRun = runs.value.find((item) => item.id === targetId);
   if (localRun) {
     selectRun(localRun);
+    await loadRunDetail(localRun.id);
     return;
   }
 
   try {
     const { data } = await platformApi.testRun(targetId);
-    runs.value = [data, ...runs.value.filter((item) => item.id !== data.id)];
+    updateListRun(data);
     selectRun(data);
   } catch {
     selectRun(undefined);
@@ -439,29 +527,107 @@ const resolveSelectedRun = async () => {
 };
 
 const selectRunFromList = (run: any) => {
-  selectRun(run);
+  if (routeRunId.value === run.id) {
+    selectRun(run);
+    void loadRunDetail(run.id);
+    return;
+  }
   router.replace({ path: route.path, query: { ...route.query, run: String(run.id) } });
 };
 
-const loadRuns = async () => {
+const buildReportListParams = () => {
+  const [createdDateStart, createdDateEnd] = getReportDateRange(reportDatePreset.value);
+  return {
+    ...(keyword.value.trim() ? { keyword: keyword.value.trim() } : {}),
+    ...(createdDateStart ? { created_date_start: createdDateStart } : {}),
+    ...(createdDateEnd ? { created_date_end: createdDateEnd } : {}),
+    ...(reportStatusFilter.value !== "all" ? { result_status: reportStatusFilter.value } : {}),
+  };
+};
+
+const loadRuns = async (preferRouteRun = true) => {
+  const params = buildReportListParams();
+  if (!params) return;
   loading.value = true;
+  stopDetailPolling();
   try {
-    const { data } = await platformApi.testRuns();
+    const { data } = await platformApi.testRuns(params);
     runs.value = unwrapList(data);
-    await resolveSelectedRun();
+    if (preferRouteRun) await resolveSelectedRun();
+    else {
+      const latestRun = runs.value[0];
+      if (!latestRun) selectRun(undefined);
+      else {
+        selectRun(latestRun);
+        await loadRunDetail(latestRun.id);
+      }
+    }
   } finally {
     loading.value = false;
   }
 };
+
+const searchReports = () => loadRuns(false);
 
 watch(() => route.query.run, () => {
   if (!loading.value) resolveSelectedRun();
 });
 
 onMounted(loadRuns);
+onUnmounted(stopDetailPolling);
 </script>
 
 <style scoped>
+.report-search-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.report-filter-selects {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.report-filter-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.report-search {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.report-search-button {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.report-running-state {
+  display: grid;
+  place-content: center;
+  min-height: 320px;
+  gap: 8px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+}
+
+.report-running-state strong {
+  color: var(--el-text-color-primary);
+  font-size: 18px;
+}
+
 .report-diagnosis-card {
   display: flex;
   align-items: flex-start;
