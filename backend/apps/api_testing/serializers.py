@@ -32,12 +32,19 @@ class DefaultProjectSerializerMixin:
 class ApiModuleSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):
     api_count = serializers.SerializerMethodField()
     test_case_count = serializers.SerializerMethodField()
+    depth = serializers.SerializerMethodField()
+    path_ids = serializers.SerializerMethodField()
+    path_names = serializers.SerializerMethodField()
+    descendant_api_count = serializers.SerializerMethodField()
     project_unique_fields = ("platform", "parent", "name")
 
     class Meta:
         model = ApiModule
         fields = "__all__"
-        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name", "api_count", "test_case_count"]
+        read_only_fields = [
+            "created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name",
+            "api_count", "test_case_count", "depth", "path_ids", "path_names", "descendant_api_count",
+        ]
         extra_kwargs = {"project": {"required": False}}
         validators = []
 
@@ -47,7 +54,71 @@ class ApiModuleSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, se
     def get_test_case_count(self, obj):
         return sum(api.test_cases.count() for api in obj.apis.all())
 
+    def _path(self, obj):
+        nodes = []
+        current = obj
+        while current:
+            nodes.append(current)
+            current = current.parent
+        return list(reversed(nodes))
+
+    def _descendant_ids(self, obj):
+        ids = [obj.id]
+        pending = [obj.id]
+        while pending:
+            children = list(ApiModule.objects.filter(parent_id__in=pending).values_list("id", flat=True))
+            ids.extend(children)
+            pending = children
+        return ids
+
+    def get_depth(self, obj):
+        return len(self._path(obj))
+
+    def get_path_ids(self, obj):
+        return [item.id for item in self._path(obj)]
+
+    def get_path_names(self, obj):
+        return [item.name for item in self._path(obj)]
+
+    def get_descendant_api_count(self, obj):
+        return ApiDefinition.objects.filter(module_id__in=self._descendant_ids(obj)).count()
+
     def validate(self, attrs):
+        project = self.get_project_value(attrs)
+        platform = attrs.get("platform", getattr(self.instance, "platform", ""))
+        managed_platform = attrs.get("managed_platform", getattr(self.instance, "managed_platform", None))
+        parent = attrs.get("parent", getattr(self.instance, "parent", None))
+
+        if parent:
+            if self.instance and parent.id == self.instance.id:
+                raise serializers.ValidationError({"parent": "上级模块不能选择自身。"})
+            if parent.project_id != project.id or parent.platform != platform:
+                raise serializers.ValidationError({"parent": "上级模块必须属于同一项目、同一平台。"})
+            if parent.managed_platform_id != getattr(managed_platform, "id", None):
+                raise serializers.ValidationError({"parent": "上级模块必须属于同一平台管理记录。"})
+
+            ancestor = parent
+            while ancestor:
+                if self.instance and ancestor.id == self.instance.id:
+                    raise serializers.ValidationError({"parent": "不能将模块移动到自身或自身后代。"})
+                ancestor = ancestor.parent
+
+        parent_depth = 0
+        ancestor = parent
+        while ancestor:
+            parent_depth += 1
+            ancestor = ancestor.parent
+
+        subtree_height = 1
+        if self.instance:
+            pending = [(self.instance.id, 1)]
+            while pending:
+                parent_id, height = pending.pop()
+                subtree_height = max(subtree_height, height)
+                pending.extend((child_id, height + 1) for child_id in ApiModule.objects.filter(parent_id=parent_id).values_list("id", flat=True))
+        if parent_depth + subtree_height > 3:
+            raise serializers.ValidationError({"parent": "模块最多支持三级，当前移动会超过层级限制。"})
+
         self.validate_project_unique(attrs)
         return attrs
 
@@ -55,16 +126,22 @@ class ApiModuleSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, se
 class ApiDefinitionSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):
     test_case_count = serializers.SerializerMethodField()
     mock_count = serializers.SerializerMethodField()
+    module_path_names = serializers.SerializerMethodField()
     project_unique_fields = ("platform", "method", "path")
 
     class Meta:
         model = ApiDefinition
         fields = "__all__"
-        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name", "test_case_count", "mock_count"]
+        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name", "test_case_count", "mock_count", "module_path_names"]
         extra_kwargs = {"project": {"required": False}}
         validators = []
 
     def validate(self, attrs):
+        module = attrs.get("module", getattr(self.instance, "module", None))
+        project = self.get_project_value(attrs)
+        platform = attrs.get("platform", getattr(self.instance, "platform", ""))
+        if module and (module.project_id != project.id or module.platform != platform):
+            raise serializers.ValidationError({"module": "所属模块必须与接口属于同一项目、同一平台。"})
         self.validate_project_unique(attrs)
         return attrs
 
@@ -76,6 +153,14 @@ class ApiDefinitionSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin
 
     def get_mock_count(self, obj):
         return obj.mock_rules.count()
+
+    def get_module_path_names(self, obj):
+        names = []
+        current = obj.module
+        while current:
+            names.append(current.name)
+            current = current.parent
+        return list(reversed(names))
 
 
 class ApiTestCaseSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):

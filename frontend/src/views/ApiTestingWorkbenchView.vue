@@ -18,27 +18,14 @@
             <span>{{ platform.name }}</span>
           </button>
           <template v-if="isPlatformExpanded(platform.code)">
-            <template v-for="module in rootModulesForPlatform(platform.code)" :key="module.id">
-              <button class="module-title tree-branch-title unified-tree-node" @click="toggleModule(module.id)">
-                <span v-if="moduleHasChildren(platform.code, module.id)" class="tree-toggle" :class="{ expanded: isModuleExpanded(module.id) }">›</span>
-                <span>{{ module.name }}</span>
-              </button>
-              <template v-if="isModuleExpanded(module.id)">
-                <button
-                  v-for="api in apisByModule(platform.code, module.id)"
-                  :key="api.id"
-                  class="api-node-v2 unified-tree-node"
-                  :class="{ active: selectedApi?.id === api.id }"
-                  @click="selectApi(api)"
-                >
-                  <span class="api-line">
-                    <i class="method-tag" :class="api.method">{{ api.method }}</i>
-                    <b>{{ api.name }}</b>
-                    <em v-if="apiDebugBadge(api)" class="debug-state-badge" :class="apiDebugBadge(api)?.className">{{ apiDebugBadge(api)?.label }}</em>
-                  </span>
-                </button>
-              </template>
-            </template>
+            <ApiDirectoryBranch
+              :nodes="rootModulesForPlatform(platform.code)"
+              :all-modules="modulesForPlatform(platform.code)"
+              :apis="filteredApis.filter((item) => item.platform === platform.code)"
+              :selected-api-id="selectedApi?.id"
+              :count-label="moduleApiCountLabel"
+              @select-api="selectApiById"
+            />
             <button
               v-for="api in apisWithoutModule(platform.code)"
               :key="api.id"
@@ -91,7 +78,17 @@
           </div>
           <div class="api-meta-row">
             <span class="api-meta-pill">{{ platformName(selectedApi.platform) }}</span>
-            <span class="api-meta-pill">{{ moduleName(selectedApi.module) }}</span>
+            <el-tree-select
+              :model-value="selectedApi.module"
+              :data="moduleTreeOptions(selectedApi.platform)"
+              clearable
+              check-strictly
+              node-key="value"
+              :props="{ label: 'label', children: 'children' }"
+              class="api-module-tree-select"
+              :disabled="savingModule"
+              @update:model-value="updateApiModule"
+            />
             <span class="api-path-pill"><b>路由</b><code>{{ selectedApi.path }}</code></span>
           </div>
           <div class="api-url-card">
@@ -101,7 +98,7 @@
         </div>
         <div class="api-head-actions">
           <el-button @click="goCasePage">测试用例</el-button>
-          <el-button type="danger" @click="removeApi">删除接口</el-button>
+          <el-button type="danger" @click="removeApi">删除</el-button>
           <el-button type="primary" :loading="savingApi" @click="saveCurrentApi">保存</el-button>
           <el-button :loading="sending" @click="sendDebug">发送</el-button>
         </div>
@@ -528,8 +525,10 @@ import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch
 import { useRoute, useRouter } from "vue-router";
 
 import { platformApi, unwrapList } from "@/api/platform";
+import ApiDirectoryBranch from "@/components/ApiDirectoryBranch.vue";
 import { formatBodyText } from "@/utils/bodyFormat";
 import { parseCurl } from "@/utils/curl";
+import { buildModuleTreeOptions, modulePathLabel } from "@/utils/moduleTree";
 
 interface RowItem { enabled: boolean; key: string; value: string; description?: string }
 interface AssertionRow { uid: number; type: string; key: string; operator: string; expected: string }
@@ -617,6 +616,7 @@ const debugRespTab = ref("body");
 const loading = ref(false);
 const sending = ref(false);
 const savingApi = ref(false);
+const savingModule = ref(false);
 const savingApiName = ref(false);
 const savingApiStatus = ref(false);
 const savingMock = ref(false);
@@ -668,6 +668,7 @@ const filteredApis = computed(() => apis.value.filter((item) => !keyword.value |
 const modulePlatformCode = (module: any) => module.platform || platformCode(platforms.value.find((item) => item.id === module.managed_platform));
 const modulesForPlatform = (code: string) => modules.value.filter((item) => modulePlatformCode(item) === code);
 const rootModulesForPlatform = (code: string) => modulesForPlatform(code).filter((item) => !item.parent);
+const moduleTreeOptions = (code: string) => buildModuleTreeOptions(modules.value, code);
 const apisByModule = (platform: string, moduleId: number) => filteredApis.value.filter((item) => item.platform === platform && item.module === moduleId);
 const apisWithoutModule = (platform: string) => filteredApis.value.filter((item) => item.platform === platform && !item.module);
 const childModules = (parentId: number) => modules.value.filter((item) => item.parent === parentId);
@@ -683,7 +684,8 @@ const toggleModule = (moduleId: number) => {
   expandedModules.value = isModuleExpanded(moduleId) ? expandedModules.value.filter((item) => item !== moduleId) : [...expandedModules.value, moduleId];
 };
 const platformName = (code: string) => platformOptions.value.find((item) => item.code === code)?.name || code;
-const moduleName = (id?: number) => modules.value.find((item) => item.id === id)?.name || "未分配";
+const moduleName = (id?: number) => modulePathLabel(modules.value, id);
+const moduleApiCountLabel = (module: any) => `${Number(module.descendant_api_count ?? module.api_count ?? 0)} 接口`;
 const responseBodyText = computed(() => {
   if (debugResult.value?.response?.body !== undefined) return JSON.stringify(debugResult.value.response.body, null, 2);
   if (debugResult.value?.error) {
@@ -1094,6 +1096,28 @@ const selectApi = async (api: ApiDefinition) => {
   await router.replace({ path: "/api-testing/apis", query: { apiId: api.id } });
   await loadCases();
   if (activeTab.value === "mock") await loadMocks();
+};
+
+const selectApiById = (api: { id: number }) => {
+  const target = apis.value.find((item) => item.id === api.id);
+  if (target) selectApi(target);
+};
+
+const updateApiModule = async (moduleId?: number) => {
+  if (!selectedApi.value || savingModule.value || selectedApi.value.module === moduleId) return;
+  savingModule.value = true;
+  try {
+    const { data } = await platformApi.updateApiDefinition(selectedApi.value.id, { module: moduleId || null });
+    const updated = data as ApiDefinition;
+    const index = apis.value.findIndex((item) => item.id === updated.id);
+    if (index >= 0) apis.value.splice(index, 1, updated);
+    selectedApi.value = updated;
+    ElMessage.success("所属模块已更新");
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.module?.[0] || error?.response?.data?.detail || "更新所属模块失败");
+  } finally {
+    savingModule.value = false;
+  }
 };
 const goCasePage = () => {
   if (!selectedApi.value) return;
@@ -1525,6 +1549,7 @@ onMounted(load);
 </script>
 
 <style scoped>
+.api-module-tree-select{width:260px;max-width:100%}
 .debug-state-badge {
   display: inline-flex;
   align-items: center;
