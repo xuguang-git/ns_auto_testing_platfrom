@@ -21,34 +21,13 @@
             <em>{{ platformCaseCount(platform.code) }}</em>
           </button>
           <template v-if="isPlatformExpanded(platform.code)">
-            <template v-for="module in rootModulesForPlatform(platform.code)" :key="module.id">
-              <button
-                class="module-title tree-branch-title case-module-node unified-tree-node"
-                :class="{ active: selectedModuleId === module.id }"
-                @click="selectModule(platform.code, module.id)"
-              >
-                <span class="tree-toggle-slot">
-                  <span v-if="moduleHasChildren(platform.code, module.id)" class="tree-toggle" :class="{ expanded: isModuleExpanded(module.id) }">›</span>
-                </span>
-                <span class="tree-node-name">{{ module.name }}</span>
-                <em>{{ moduleCaseCount(module.id) }}</em>
-              </button>
-              <template v-if="isModuleExpanded(module.id)">
-                <button
-                  v-for="child in childModules(module.id)"
-                  :key="child.id"
-                  class="module-title tree-branch-title case-module-node child unified-tree-node"
-                  :class="{ active: selectedModuleId === child.id }"
-                  @click="selectModule(platform.code, child.id)"
-                >
-                  <span class="tree-toggle-slot">
-                    <span v-if="moduleHasChildren(platform.code, child.id)" class="tree-toggle" :class="{ expanded: isModuleExpanded(child.id) }">›</span>
-                  </span>
-                  <span class="tree-node-name">{{ child.name }}</span>
-                  <em>{{ moduleCaseCount(child.id) }}</em>
-                </button>
-              </template>
-            </template>
+            <ApiDirectoryBranch
+              :nodes="rootModulesForPlatform(platform.code)"
+              :all-modules="modules.filter((item) => modulePlatformCode(item) === platform.code)"
+              :selected-module-id="typeof selectedModuleId === 'number' ? selectedModuleId : undefined"
+              :count-label="moduleCaseCount"
+              @select-module="selectModule(platform.code, $event)"
+            />
             <button
               v-if="unassignedCaseCount(platform.code)"
               class="module-title tree-branch-title case-module-node unified-tree-node"
@@ -347,8 +326,10 @@ import { computed, defineComponent, h, nextTick, onMounted, reactive, ref } from
 import { useRoute, useRouter } from "vue-router";
 
 import { platformApi, unwrapList } from "@/api/platform";
+import ApiDirectoryBranch from "@/components/ApiDirectoryBranch.vue";
 import { formatBodyText } from "@/utils/bodyFormat";
 import { extractJsonPath, formatExtractValue } from "@/utils/jsonExtract";
+import { collectModuleDescendantIds, modulePathLabel } from "@/utils/moduleTree";
 
 interface RowItem { enabled: boolean; key: string; value: string; description?: string }
 interface AssertionRow { uid: number; type: string; key: string; operator: string; expected: string }
@@ -492,15 +473,22 @@ const toggleModule = (moduleId: number) => {
 };
 const selectableApis = computed(() => {
   if (!selectedPlatform.value) return [];
-  if (selectedModuleId.value) return apisByModule(selectedModuleId.value).filter((item) => item.platform === selectedPlatform.value);
+  if (typeof selectedModuleId.value === "number") {
+    const moduleIds = new Set(collectModuleDescendantIds(modules.value, selectedModuleId.value));
+    return apis.value.filter((item) => item.platform === selectedPlatform.value && moduleIds.has(item.module || -1));
+  }
   return platformApis(selectedPlatform.value);
 });
 const selectedDirectoryName = computed(() => {
   if (selectedModuleId.value === "unassigned") return "未分配";
-  return modules.value.find((item) => item.id === selectedModuleId.value)?.name || "";
+  return modulePathLabel(modules.value, selectedModuleId.value as number, "");
 });
 const totalCaseCount = computed(() => modules.value.reduce((sum, item) => sum + Number(item.test_case_count || 0), 0) + apis.value.filter((api) => !api.module).reduce((sum, api) => sum + Number(api.test_case_count || 0), 0));
-const moduleCaseCount = (moduleId: number) => Number(modules.value.find((item) => item.id === moduleId)?.test_case_count || 0);
+const moduleCaseCount = (module: number | any) => {
+  const moduleId = typeof module === "number" ? module : module.id;
+  const ids = new Set(collectModuleDescendantIds(modules.value, moduleId));
+  return apis.value.filter((api) => ids.has(api.module || -1)).reduce((sum, api) => sum + Number(api.test_case_count || 0), 0);
+};
 const unassignedCaseCount = (platform: string) => apis.value.filter((api) => api.platform === platform && !api.module).reduce((sum, api) => sum + Number(api.test_case_count || 0), 0);
 const platformCaseCount = (platform: string) => modules.value.filter((item) => modulePlatformCode(item) === platform).reduce((sum, item) => sum + Number(item.test_case_count || 0), 0) + unassignedCaseCount(platform);
 const filteredCases = computed(() =>
@@ -730,7 +718,8 @@ const loadCases = async () => {
       const ids = apisByModule("unassigned").filter((api) => api.platform === selectedPlatform.value).map((api) => api.id);
       params.api_ids = ids.join(",");
     } else {
-      params.api__module = selectedModuleId.value;
+      const moduleIds = new Set(collectModuleDescendantIds(modules.value, selectedModuleId.value));
+      params.api_ids = apis.value.filter((api) => moduleIds.has(api.module || -1)).map((api) => api.id).join(",");
     }
     const { data } = await platformApi.apiTestCases(params);
     cases.value = unwrapList<ApiTestCase>(data);
