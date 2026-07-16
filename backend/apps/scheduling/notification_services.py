@@ -191,6 +191,8 @@ def _build_feishu_sign(timestamp: str, secret: str) -> str:
 def _should_notify(schedule: ScheduledPlan, test_run: TestRun) -> bool:
     if schedule.notify_on == ScheduledPlan.NotifyOn.DISABLED:
         return False
+    if test_run.status not in {TestRun.Status.COMPLETED, TestRun.Status.FAILED}:
+        return False
     failed_count = int((test_run.summary or {}).get("failed") or 0)
     if schedule.notify_on == ScheduledPlan.NotifyOn.FAILED_ONLY:
         return test_run.status == TestRun.Status.FAILED or failed_count > 0
