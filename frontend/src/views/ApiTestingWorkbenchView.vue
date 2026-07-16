@@ -101,6 +101,7 @@
         </div>
         <div class="api-head-actions">
           <el-button @click="goCasePage">测试用例</el-button>
+          <el-button type="danger" @click="removeApi">删除接口</el-button>
           <el-button type="primary" :loading="savingApi" @click="saveCurrentApi">保存</el-button>
           <el-button :loading="sending" @click="sendDebug">发送</el-button>
         </div>
@@ -1097,6 +1098,25 @@ const selectApi = async (api: ApiDefinition) => {
 const goCasePage = () => {
   if (!selectedApi.value) return;
   router.push({ path: "/api-testing/cases", query: { apiId: selectedApi.value.id } });
+};
+const removeApi = async () => {
+  const current = selectedApi.value;
+  if (!current) return;
+  await ElMessageBox.confirm(`确认删除接口“${current.name}”？`, "删除确认", { type: "warning" });
+  const currentIndex = apis.value.findIndex((item) => item.id === current.id);
+  await platformApi.deleteApiDefinition(current.id);
+  apis.value = apis.value.filter((item) => item.id !== current.id);
+  ElMessage.success("接口已删除");
+  const next = apis.value[currentIndex] || apis.value[currentIndex - 1] || apis.value[0];
+  if (next) {
+    await selectApi(next);
+    return;
+  }
+  selectedApi.value = undefined;
+  cases.value = [];
+  mocks.value = [];
+  debugResult.value = undefined;
+  await router.replace({ path: "/api-testing/apis" });
 };
 const startApiNameEdit = async () => {
   if (!selectedApi.value) return;
