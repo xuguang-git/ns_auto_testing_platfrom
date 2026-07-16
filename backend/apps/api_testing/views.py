@@ -27,6 +27,7 @@ from apps.api_testing.services import execute_debug_request
 from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.services import get_default_project
+from apps.scheduling.models import ScheduledPlan
 
 
 MOCK_BLOCKED_RESPONSE_HEADERS = {
@@ -205,6 +206,50 @@ class ApiModuleViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
         self.write_operator_audit(AuditLog.ActionType.CREATE, instance)
 
 
+def count_suites_using_case(case: ApiTestCase) -> int:
+    """统计当前单接口用例被多少个测试套件引用。"""
+
+    suites = ApiSuite.objects.filter(project_id=case.project_id).only("case_ids")
+    return sum(1 for suite in suites if case.id in (suite.case_ids or []))
+
+
+def suite_ids_using_case(case: ApiTestCase) -> set[int]:
+    suites = ApiSuite.objects.filter(project_id=case.project_id).only("id", "case_ids")
+    return {suite.id for suite in suites if case.id in (suite.case_ids or [])}
+
+
+def count_schedules_using_case(case: ApiTestCase) -> int:
+    suite_ids = suite_ids_using_case(case)
+    if not suite_ids:
+        return 0
+    return ScheduledPlan.objects.filter(suite_id__in=suite_ids).count()
+
+
+def suite_ids_using_api(api: ApiDefinition) -> set[int]:
+    case_ids = set(api.test_cases.values_list("id", flat=True))
+    suite_ids = set(
+        ApiStep.objects.filter(api=api, scenario__suite__project_id=api.project_id)
+        .values_list("scenario__suite_id", flat=True)
+        .distinct()
+    )
+    if not case_ids:
+        return suite_ids
+    suites = ApiSuite.objects.filter(project_id=api.project_id).only("id", "case_ids")
+    suite_ids.update(suite.id for suite in suites if case_ids.intersection(suite.case_ids or []))
+    return suite_ids
+
+
+def count_suites_using_api(api: ApiDefinition) -> int:
+    return len(suite_ids_using_api(api))
+
+
+def count_schedules_using_api(api: ApiDefinition) -> int:
+    suite_ids = suite_ids_using_api(api)
+    if not suite_ids:
+        return 0
+    return ScheduledPlan.objects.filter(suite_id__in=suite_ids).count()
+
+
 class ApiDefinitionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiDefinition.objects.select_related("project", "module").prefetch_related("test_cases", "mock_rules").all()
     serializer_class = ApiDefinitionSerializer
@@ -223,6 +268,8 @@ class ApiDefinitionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     delete_object_label = "接口"
     delete_guard_rules = (
         DeleteGuardRule("test_cases", "单接口用例"),
+        DeleteGuardRule(None, "测试套件", "当前接口已被测试套件通过用例或场景步骤引用，不允许删除，请先清理套件关联。", count_suites_using_api),
+        DeleteGuardRule(None, "定时任务", "当前接口关联的测试套件已被定时任务引用，不允许删除，请先清理定时任务或套件关联。", count_schedules_using_api),
         DeleteGuardRule("mock_rules", "Mock规则"),
         DeleteGuardRule("steps", "场景步骤"),
     )
@@ -250,13 +297,6 @@ class ApiDefinitionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
         return response.Response(result, status=status.HTTP_200_OK)
 
 
-def count_suites_using_case(case: ApiTestCase) -> int:
-    """统计当前单接口用例被多少个测试套件引用。"""
-
-    suites = ApiSuite.objects.filter(project_id=case.project_id).only("case_ids")
-    return sum(1 for suite in suites if case.id in (suite.case_ids or []))
-
-
 class ApiTestCaseViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiTestCase.objects.select_related("project", "api", "api__module").all()
     serializer_class = ApiTestCaseSerializer
@@ -268,6 +308,7 @@ class ApiTestCaseViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     delete_object_label = "单接口用例"
     delete_guard_rules = (
         DeleteGuardRule(None, "测试套件", "当前测试用例已被测试套件引用，不允许删除，请先从套件中移除。", count_suites_using_case),
+        DeleteGuardRule(None, "定时任务", "当前测试用例所属套件已被定时任务引用，不允许删除，请先清理定时任务或套件关联。", count_schedules_using_case),
     )
 
     def get_queryset(self):
