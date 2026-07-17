@@ -8,6 +8,7 @@ from kombu.exceptions import OperationalError
 
 from apps.scheduling.models import ScheduledPlan
 from apps.test_runs.models import TestRun
+from apps.test_runs.snapshots import persist_execution_snapshot
 from apps.test_runs.tasks import run_api_suite
 
 
@@ -35,6 +36,7 @@ def trigger_scheduled_plan(schedule: ScheduledPlan, trigger_type: str = TestRun.
             schedule=schedule,
             trigger_type=trigger_type,
         )
+        persist_execution_snapshot(test_run)
         schedule.last_run_at = timezone.now()
         schedule.last_run_id = test_run.id
         schedule.last_status = TestRun.Status.RUNNING

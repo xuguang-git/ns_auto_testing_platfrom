@@ -1,9 +1,12 @@
 from rest_framework import serializers
 
 from apps.api_testing.mock_security import mock_proxy_path, mock_rule_path
-from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiTestCase
+from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiSuiteCase, ApiSuiteScenario, ApiTestCase
 from apps.core.serializers import OperatorFieldsMixin
 from apps.projects.services import get_default_project
+
+
+API_SUITE_RUN_CONFIG_FIELDS = {"priority", "environment"}
 
 
 class DefaultProjectSerializerMixin:
@@ -226,11 +229,13 @@ class ApiMockRuleSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
 
 class ApiSuiteSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):
     project_unique_fields = ("name",)
+    case_count = serializers.SerializerMethodField()
+    scenario_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ApiSuite
         fields = "__all__"
-        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name"]
+        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name", "case_ids", "case_count", "scenario_count"]
         extra_kwargs = {"project": {"required": False}}
         validators = []
 
@@ -238,12 +243,64 @@ class ApiSuiteSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, ser
         self.validate_project_unique(attrs)
         return attrs
 
+    def validate_run_config(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("套件运行配置格式不正确。")
+        return {key: value[key] for key in API_SUITE_RUN_CONFIG_FIELDS if key in value}
 
-class ApiScenarioSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
+    def get_case_count(self, obj):
+        return obj.case_links.count()
+
+    def get_scenario_count(self, obj):
+        return obj.scenario_links.count()
+
+
+class ApiSuiteDetailSerializer(ApiSuiteSerializer):
+    case_items = serializers.SerializerMethodField()
+    scenario_items = serializers.SerializerMethodField()
+
+    class Meta(ApiSuiteSerializer.Meta):
+        read_only_fields = [*ApiSuiteSerializer.Meta.read_only_fields, "case_items", "scenario_items"]
+
+    def get_case_items(self, obj):
+        ordered_cases = [
+            link.case
+            for link in ApiSuiteCase.objects.filter(suite=obj).select_related("case", "case__api", "case__api__module")
+        ]
+        return ApiTestCaseSerializer(ordered_cases, many=True, context=self.context).data
+
+    def get_scenario_items(self, obj):
+        scenarios = [
+            link.scenario
+            for link in ApiSuiteScenario.objects.filter(suite=obj).select_related("scenario")
+        ]
+        return ApiScenarioSerializer(scenarios, many=True, context=self.context).data
+
+
+class ApiSuiteMembersSerializer(serializers.Serializer):
+    scenario_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
+    case_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list)
+    run_config = serializers.DictField(required=False)
+
+    def validate(self, attrs):
+        for field in ("scenario_ids", "case_ids"):
+            values = attrs.get(field, [])
+            if len(values) != len(set(values)):
+                raise serializers.ValidationError({field: "不能包含重复成员。"})
+        run_config = attrs.get("run_config")
+        if run_config is not None:
+            if not isinstance(run_config, dict):
+                raise serializers.ValidationError({"run_config": "套件运行配置格式不正确。"})
+            attrs["run_config"] = {key: run_config[key] for key in API_SUITE_RUN_CONFIG_FIELDS if key in run_config}
+        return attrs
+
+
+class ApiScenarioSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = ApiScenario
         fields = "__all__"
-        read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name"]
+        read_only_fields = ["suite", "created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name"]
+        extra_kwargs = {"project": {"required": False}}
 
 
 class ApiStepSerializer(OperatorFieldsMixin, serializers.ModelSerializer):

@@ -27,6 +27,7 @@ from apps.projects.serializers import (
     TestDataSourceSerializer,
 )
 from apps.projects.services import get_default_project
+from apps.test_runs.snapshots import count_active_runs_using_test_data_source
 
 
 class ProjectViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
@@ -361,13 +362,17 @@ class DataFactoryCapabilityViewSet(OperatorAuditModelViewSet):
     audit_module = "data_factory"
 
 
-class TestDataSourceViewSet(OperatorAuditModelViewSet):
+class TestDataSourceViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = TestDataSource.objects.select_related("project", "environment", "database_connection", "created_by", "updated_by").all()
     serializer_class = TestDataSourceSerializer
     permission_classes = [action_permission(("database.read", "automation.read", "api_case.read"), "database.create", "database.update", "database.delete", "database.execute")]
     filterset_fields = ["project", "environment", "database_connection", "source_type", "is_active"]
     search_fields = ["name", "description", "sql"]
     audit_module = "test_data_source"
+    delete_object_label = "测试数据源"
+    delete_guard_rules = (
+        DeleteGuardRule(None, "待执行任务", "当前测试数据源存在待执行或运行中的任务快照引用，请等待任务结束后再删除。", count_active_runs_using_test_data_source),
+    )
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
