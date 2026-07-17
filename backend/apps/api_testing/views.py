@@ -3,7 +3,9 @@ import time
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import decorators, response, status, viewsets
 from rest_framework import exceptions as drf_exceptions
@@ -11,7 +13,7 @@ from rest_framework import exceptions as drf_exceptions
 from apps.accounts.models import AuditLog
 from apps.accounts.permissions import action_permission
 from apps.accounts.security import authenticate_access_token, get_access_token_from_request
-from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiTestCase
+from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiSuiteCase, ApiSuiteScenario, ApiTestCase
 from apps.api_testing.serializers import (
     ApiCaseSerializer,
     ApiDefinitionSerializer,
@@ -20,6 +22,8 @@ from apps.api_testing.serializers import (
     ApiScenarioSerializer,
     ApiStepSerializer,
     ApiSuiteSerializer,
+    ApiSuiteDetailSerializer,
+    ApiSuiteMembersSerializer,
     ApiTestCaseSerializer,
 )
 from apps.api_testing.mock_security import verify_mock_rule_token
@@ -28,6 +32,7 @@ from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.services import get_default_project
 from apps.scheduling.models import ScheduledPlan
+from apps.test_runs.snapshots import count_active_runs_using_api, count_active_runs_using_case, count_active_runs_using_scenario
 
 
 MOCK_BLOCKED_RESPONSE_HEADERS = {
@@ -209,13 +214,11 @@ class ApiModuleViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
 def count_suites_using_case(case: ApiTestCase) -> int:
     """统计当前单接口用例被多少个测试套件引用。"""
 
-    suites = ApiSuite.objects.filter(project_id=case.project_id).only("case_ids")
-    return sum(1 for suite in suites if case.id in (suite.case_ids or []))
+    return ApiSuiteCase.objects.filter(case=case).count()
 
 
 def suite_ids_using_case(case: ApiTestCase) -> set[int]:
-    suites = ApiSuite.objects.filter(project_id=case.project_id).only("id", "case_ids")
-    return {suite.id for suite in suites if case.id in (suite.case_ids or [])}
+    return set(ApiSuiteCase.objects.filter(case=case).values_list("suite_id", flat=True))
 
 
 def count_schedules_using_case(case: ApiTestCase) -> int:
@@ -228,14 +231,12 @@ def count_schedules_using_case(case: ApiTestCase) -> int:
 def suite_ids_using_api(api: ApiDefinition) -> set[int]:
     case_ids = set(api.test_cases.values_list("id", flat=True))
     suite_ids = set(
-        ApiStep.objects.filter(api=api, scenario__suite__project_id=api.project_id)
-        .values_list("scenario__suite_id", flat=True)
+        ApiSuiteScenario.objects.filter(scenario__steps__api=api, suite__project_id=api.project_id)
+        .values_list("suite_id", flat=True)
         .distinct()
     )
-    if not case_ids:
-        return suite_ids
-    suites = ApiSuite.objects.filter(project_id=api.project_id).only("id", "case_ids")
-    suite_ids.update(suite.id for suite in suites if case_ids.intersection(suite.case_ids or []))
+    if case_ids:
+        suite_ids.update(ApiSuiteCase.objects.filter(case_id__in=case_ids, suite__project_id=api.project_id).values_list("suite_id", flat=True))
     return suite_ids
 
 
@@ -248,6 +249,31 @@ def count_schedules_using_api(api: ApiDefinition) -> int:
     if not suite_ids:
         return 0
     return ScheduledPlan.objects.filter(suite_id__in=suite_ids).count()
+
+
+def replace_suite_members(model, suite: ApiSuite, member_ids: list[int], member_field: str) -> None:
+    """按提交顺序同步套件成员关联，避免依赖特定数据库的 upsert 实现。"""
+
+    links = {
+        getattr(link, f"{member_field}_id"): link
+        for link in model.objects.filter(suite=suite)
+    }
+    model.objects.filter(suite=suite).exclude(**{f"{member_field}_id__in": member_ids}).delete()
+    now = timezone.now()
+    to_create = []
+    to_update = []
+    for sort_order, member_id in enumerate(member_ids):
+        link = links.get(member_id)
+        if link is None:
+            to_create.append(model(suite=suite, **{f"{member_field}_id": member_id, "sort_order": sort_order}))
+        elif link.sort_order != sort_order:
+            link.sort_order = sort_order
+            link.updated_at = now
+            to_update.append(link)
+    if to_create:
+        model.objects.bulk_create(to_create)
+    if to_update:
+        model.objects.bulk_update(to_update, ["sort_order", "updated_at"])
 
 
 class ApiDefinitionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
@@ -270,6 +296,7 @@ class ApiDefinitionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
         DeleteGuardRule("test_cases", "单接口用例"),
         DeleteGuardRule(None, "测试套件", "当前接口已被测试套件通过用例或场景步骤引用，不允许删除，请先清理套件关联。", count_suites_using_api),
         DeleteGuardRule(None, "定时任务", "当前接口关联的测试套件已被定时任务引用，不允许删除，请先清理定时任务或套件关联。", count_schedules_using_api),
+        DeleteGuardRule(None, "待执行任务", "当前接口存在待执行或运行中的任务快照引用，请等待任务结束后再删除。", count_active_runs_using_api),
         DeleteGuardRule("mock_rules", "Mock规则"),
         DeleteGuardRule("steps", "场景步骤"),
     )
@@ -309,6 +336,7 @@ class ApiTestCaseViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     delete_guard_rules = (
         DeleteGuardRule(None, "测试套件", "当前测试用例已被测试套件引用，不允许删除，请先从套件中移除。", count_suites_using_case),
         DeleteGuardRule(None, "定时任务", "当前测试用例所属套件已被定时任务引用，不允许删除，请先清理定时任务或套件关联。", count_schedules_using_case),
+        DeleteGuardRule(None, "待执行任务", "当前单接口用例存在待执行或运行中的任务快照引用，请等待任务结束后再删除。", count_active_runs_using_case),
     )
 
     def get_queryset(self):
@@ -347,10 +375,61 @@ class ApiSuiteViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     audit_module = "api_suite"
     delete_object_label = "测试套件"
     delete_guard_rules = (
-        DeleteGuardRule("scenarios", "场景用例"),
         DeleteGuardRule("cases", "旧版单接口用例"),
         DeleteGuardRule("schedules", "定时任务"),
         DeleteGuardRule("runs", "测试报告"),
+    )
+
+    def get_serializer_class(self):
+        return ApiSuiteDetailSerializer if self.action == "retrieve" else ApiSuiteSerializer
+
+    def perform_create(self, serializer):
+        user = self.request.user if self.request.user.is_authenticated else None
+        instance = serializer.save(
+            project=serializer.validated_data.get("project") or get_default_project(),
+            created_by=user,
+            updated_by=user,
+        )
+        self.write_operator_audit(AuditLog.ActionType.CREATE, instance)
+
+    @decorators.action(detail=True, methods=["put"], url_path="members")
+    def update_members(self, request, pk=None):
+        suite = self.get_object()
+        serializer = ApiSuiteMembersSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        scenario_ids = serializer.validated_data["scenario_ids"]
+        case_ids = serializer.validated_data["case_ids"]
+        scenarios = list(ApiScenario.objects.filter(project_id=suite.project_id, id__in=scenario_ids))
+        cases = list(ApiTestCase.objects.filter(project_id=suite.project_id, id__in=case_ids))
+        if len(scenarios) != len(scenario_ids):
+            raise drf_exceptions.ValidationError({"scenario_ids": "存在不属于当前项目或已删除的场景用例。"})
+        if len(cases) != len(case_ids):
+            raise drf_exceptions.ValidationError({"case_ids": "存在不属于当前项目或已删除的单接口用例。"})
+
+        with transaction.atomic():
+            replace_suite_members(ApiSuiteScenario, suite, scenario_ids, "scenario")
+            replace_suite_members(ApiSuiteCase, suite, case_ids, "case")
+            if "run_config" in serializer.validated_data:
+                suite.run_config = serializer.validated_data["run_config"]
+                suite.updated_by = request.user if request.user.is_authenticated else None
+                suite.save(update_fields=["run_config", "updated_by", "updated_at"])
+            self.write_operator_audit(AuditLog.ActionType.UPDATE, suite)
+
+        return response.Response(ApiSuiteDetailSerializer(suite, context={"request": request}).data)
+
+
+class ApiScenarioViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
+    queryset = ApiScenario.objects.select_related("project", "suite").all()
+    serializer_class = ApiScenarioSerializer
+    permission_classes = [action_permission("automation.read", "automation.create", "automation.update", "automation.delete")]
+    filterset_fields = ["project", "priority", "is_active"]
+    search_fields = ["name", "description"]
+    audit_module = "api_scenario"
+    delete_object_label = "场景用例"
+    delete_guard_rules = (
+        DeleteGuardRule("steps", "场景步骤"),
+        DeleteGuardRule("suite_links", "测试套件"),
+        DeleteGuardRule(None, "待执行任务", "当前场景存在待执行或运行中的任务快照引用，请等待任务结束后再删除。", count_active_runs_using_scenario),
     )
 
     def perform_create(self, serializer):
@@ -363,21 +442,8 @@ class ApiSuiteViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
         self.write_operator_audit(AuditLog.ActionType.CREATE, instance)
 
 
-class ApiScenarioViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
-    queryset = ApiScenario.objects.select_related("suite", "suite__project").all()
-    serializer_class = ApiScenarioSerializer
-    permission_classes = [action_permission("automation.read", "automation.create", "automation.update", "automation.delete")]
-    filterset_fields = ["suite", "priority", "is_active"]
-    search_fields = ["name", "description"]
-    audit_module = "api_scenario"
-    delete_object_label = "场景用例"
-    delete_guard_rules = (
-        DeleteGuardRule("steps", "场景步骤"),
-    )
-
-
 class ApiStepViewSet(OperatorAuditModelViewSet):
-    queryset = ApiStep.objects.select_related("scenario", "scenario__suite", "api").all()
+    queryset = ApiStep.objects.select_related("scenario", "scenario__project", "api").all()
     serializer_class = ApiStepSerializer
     permission_classes = [action_permission("automation.read", "automation.create", "automation.update", "automation.delete")]
     filterset_fields = ["scenario", "platform", "method", "is_active"]

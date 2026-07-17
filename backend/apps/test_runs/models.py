@@ -29,6 +29,7 @@ class TestRun(TimestampedModel):
     duration_ms = models.PositiveIntegerField(default=0)
     summary = models.JSONField(default=dict, blank=True)
     report = models.JSONField(default=dict, blank=True)
+    execution_snapshot = models.JSONField(default=dict, blank=True)
     logs = models.JSONField(default=list, blank=True)
     error_message = models.TextField(blank=True)
 
@@ -38,6 +39,25 @@ class TestRun(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.suite.name}#{self.pk}"
+
+
+class TestRunResourceReference(TimestampedModel):
+    class ResourceType(models.TextChoices):
+        SUITE = "suite", "测试套件"
+        SCENARIO = "scenario", "场景用例"
+        CASE = "case", "单接口用例"
+        API = "api", "接口"
+        ENVIRONMENT = "environment", "运行环境"
+        TEST_DATA_SOURCE = "test_data_source", "测试数据源"
+
+    run = models.ForeignKey(TestRun, on_delete=models.CASCADE, related_name="resource_references")
+    resource_type = models.CharField(max_length=32, choices=ResourceType.choices)
+    resource_id = models.PositiveBigIntegerField()
+
+    class Meta:
+        db_table_comment = "测试执行快照资源引用表。"
+        unique_together = [("run", "resource_type", "resource_id")]
+        indexes = [models.Index(fields=["resource_type", "resource_id"])]
 
 
 class TestRunStep(TimestampedModel):
@@ -80,6 +100,7 @@ apply_model_comments(TestRun, "测试执行记录表：一次测试套件运行�
     "duration_ms": "总耗时毫秒。",
     "summary": "执行摘要JSON。",
     "report": "执行报告JSON。",
+    "execution_snapshot": "任务触发时固化的执行快照JSON。",
     "logs": "执行日志列表。",
     "error_message": "失败错误信息。",
 })

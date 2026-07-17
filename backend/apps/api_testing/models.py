@@ -142,8 +142,9 @@ class ApiSuite(OwnedModel):
     description = models.TextField(blank=True)
     platforms = models.JSONField(default=list, blank=True)
     tags = models.JSONField(default=list, blank=True)
-    case_ids = models.JSONField(default=list, blank=True, db_comment="套件包含的单接口用例ID列表。")
-    run_config = models.JSONField(default=dict, blank=True, db_comment="套件运行配置JSON，如运行环境、运行模式、执行器和推送开关。")
+    # 迁移兼容字段：新业务关联统一由 ApiSuiteCase 维护。
+    case_ids = models.JSONField(default=list, blank=True, db_comment="套件历史单接口用例ID列表。")
+    run_config = models.JSONField(default=dict, blank=True, db_comment="套件运行配置JSON，如优先级和运行环境。")
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -156,7 +157,9 @@ class ApiSuite(OwnedModel):
 
 
 class ApiScenario(OwnedModel):
-    suite = models.ForeignKey(ApiSuite, on_delete=models.CASCADE, related_name="scenarios")
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="api_scenarios")
+    # 迁移兼容字段：新业务关联统一由 ApiSuiteScenario 维护。
+    suite = models.ForeignKey(ApiSuite, null=True, blank=True, on_delete=models.SET_NULL, related_name="legacy_scenarios")
     environment = models.ForeignKey(Environment, null=True, blank=True, on_delete=models.SET_NULL, related_name="api_scenarios")
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
@@ -168,11 +171,32 @@ class ApiScenario(OwnedModel):
 
     class Meta:
         db_table_comment = '接口场景用例表：按业务流程编排多个接口步骤。'
-        unique_together = [("suite", "name")]
-        ordering = ["suite_id", "sort_order", "id"]
+        ordering = ["project_id", "sort_order", "id"]
 
     def __str__(self) -> str:
         return self.name
+
+
+class ApiSuiteScenario(TimestampedModel):
+    suite = models.ForeignKey(ApiSuite, on_delete=models.CASCADE, related_name="scenario_links")
+    scenario = models.ForeignKey(ApiScenario, on_delete=models.CASCADE, related_name="suite_links")
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table_comment = "测试套件与场景用例关联表。"
+        unique_together = [("suite", "scenario")]
+        ordering = ["suite_id", "sort_order", "id"]
+
+
+class ApiSuiteCase(TimestampedModel):
+    suite = models.ForeignKey(ApiSuite, on_delete=models.CASCADE, related_name="case_links")
+    case = models.ForeignKey(ApiTestCase, on_delete=models.CASCADE, related_name="suite_links")
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table_comment = "测试套件与单接口用例关联表。"
+        unique_together = [("suite", "case")]
+        ordering = ["suite_id", "sort_order", "id"]
 
 
 class ApiStep(OwnedModel):
@@ -288,6 +312,7 @@ apply_model_comments(ApiSuite, "接口测试套件表：组织接口用例和场
     "description": "套件说明。",
     "platforms": "套件覆盖的平台编码列表。",
     "tags": "套件标签列表。",
+    "run_config": "套件运行配置JSON，如优先级和运行环境。",
     "is_active": "是否启用。",
 })
 apply_model_comments(ApiScenario, "接口场景用例表：按业务流程编排多个接口步骤。", {
