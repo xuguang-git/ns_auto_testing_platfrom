@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.api_testing.mock_security import mock_proxy_path, mock_rule_path
-from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiSuiteCase, ApiSuiteScenario, ApiTestCase
+from apps.api_testing.models import ApiCase, ApiDefinition, ApiImportBatch, ApiImportItem, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiSuiteCase, ApiSuiteScenario, ApiTestCase, HttpMethod, OpenApiCallLog, OpenApiCapability
 from apps.core.serializers import OperatorFieldsMixin
 from apps.projects.services import get_default_project
 
@@ -33,6 +33,7 @@ class DefaultProjectSerializerMixin:
 
 
 class ApiModuleSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):
+    code = serializers.SlugField(max_length=32, validators=[])
     api_count = serializers.SerializerMethodField()
     test_case_count = serializers.SerializerMethodField()
     depth = serializers.SerializerMethodField()
@@ -85,6 +86,15 @@ class ApiModuleSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, se
 
     def get_descendant_api_count(self, obj):
         return ApiDefinition.objects.filter(module_id__in=self._descendant_ids(obj)).count()
+
+    def validate_code(self, value):
+        code = value.strip()
+        queryset = ApiModule.objects.filter(code=code)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("模块编码已存在")
+        return code
 
     def validate(self, attrs):
         project = self.get_project_value(attrs)
@@ -243,6 +253,11 @@ class ApiSuiteSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, ser
         self.validate_project_unique(attrs)
         return attrs
 
+    def validate_code(self, value):
+        if not value:
+            raise serializers.ValidationError("模块编码不能为空。")
+        return value
+
     def validate_run_config(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("套件运行配置格式不正确。")
@@ -315,3 +330,93 @@ class ApiCaseSerializer(OperatorFieldsMixin, serializers.ModelSerializer):
         model = ApiCase
         fields = "__all__"
         read_only_fields = ["created_at", "updated_at", "created_by", "updated_by", "created_by_name", "updated_by_name"]
+
+
+class ImportItemRequestSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        max_length=100,
+        error_messages={"required": "接口名称不能为空。", "blank": "接口名称不能为空。", "max_length": "接口名称长度不能超过 100 个字符。"},
+    )
+    path = serializers.CharField(
+        max_length=512,
+        error_messages={"required": "接口路径不能为空。", "blank": "接口路径不能为空。", "max_length": "接口路径长度不能超过 512 个字符。"},
+    )
+    method = serializers.ChoiceField(
+        choices=HttpMethod.values,
+        error_messages={"required": "请求方式不能为空。", "invalid_choice": "请求方式不合法。"},
+    )
+    params = serializers.DictField(
+        error_messages={"required": "请求参数不能为空。", "not_a_dict": "请求参数必须为 JSON 对象。"},
+    )
+
+class BatchImportRequestSerializer(serializers.Serializer):
+    module_code = serializers.SlugField(max_length=32)
+    items = ImportItemRequestSerializer(many=True, min_length=1, max_length=100)
+
+
+class DocumentationFieldSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=128)
+    type = serializers.CharField(max_length=64, required=False, default="string")
+    required = serializers.BooleanField(required=False, default=False)
+    description = serializers.CharField(max_length=500)
+
+
+class DocumentationHeaderSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=128)
+    required = serializers.BooleanField()
+    description = serializers.CharField(max_length=500)
+
+
+class DocumentationErrorSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=96)
+    message = serializers.CharField(max_length=500)
+
+
+class OpenApiDocumentationSerializer(serializers.Serializer):
+    overview = serializers.CharField(max_length=2000)
+    headers = DocumentationHeaderSerializer(many=True)
+    request_fields = DocumentationFieldSerializer(many=True)
+    request_example = serializers.DictField()
+    error_cases = DocumentationErrorSerializer(many=True)
+
+
+class OpenApiCapabilitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OpenApiCapability
+        fields = ["code", "name", "version", "method", "path", "documentation", "required_permission", "sort_order", "updated_at"]
+
+    def validate_documentation(self, value):
+        serializer = OpenApiDocumentationSerializer(data=value)
+        serializer.is_valid(raise_exception=True)
+        return serializer.validated_data
+
+
+class OpenApiCallLogSerializer(serializers.ModelSerializer):
+    caller_name = serializers.SerializerMethodField()
+    related_batch_no = serializers.CharField(source="related_batch.batch_no", read_only=True, default=None)
+    result_summary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OpenApiCallLog
+        fields = ["request_id", "capability_code", "capability_name", "caller_name", "status", "result_summary", "related_batch_no", "created_at"]
+
+    def get_caller_name(self, obj):
+        return obj.caller.get_full_name() or obj.caller.username if obj.caller else ""
+
+    def get_result_summary(self, obj):
+        if obj.related_batch:
+            return {
+                "batch_no": obj.related_batch.batch_no,
+                "total": obj.related_batch.total,
+                "success_count": obj.related_batch.success_count,
+                "skipped_count": obj.related_batch.skipped_count,
+                "failed_count": obj.related_batch.failed_count,
+                "status": obj.related_batch.status,
+            }
+        return obj.result_summary
+
+
+class ApiImportItemResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApiImportItem
+        fields = ["sequence_no", "name", "method", "path", "status", "api_id"]

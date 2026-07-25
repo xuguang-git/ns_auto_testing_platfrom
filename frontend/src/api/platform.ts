@@ -143,6 +143,11 @@ export const platformApi = {
   deleteUiAction: (id: number) => http.delete(`/ui-actions/${id}/`),
   runUiCase: (id: number, payload?: Record<string, unknown>) => http.post(`/ui-cases/${id}/run/`, payload || {}, { timeout: 120000 }),
   debugApi: (payload: Record<string, unknown>) => http.post("/api-definitions/debug/", payload, { toast: false }),
+  internalApiDocuments: () => http.get("/internal-api-documents/"),
+  internalApiDocument: (code: string) => http.get(`/internal-api-documents/${code}/documentation/`, { cache: false }),
+  apiImportCallLogs: (params?: Record<string, unknown>) => http.get("/api-import-call-logs/", { params }),
+  apiImportCallLog: (requestId: string) => http.get(`/api-import-call-logs/${requestId}/`),
+  apiImportBatch: (batchNo: string) => http.get(`/api-import-batches/${batchNo}/`),
 };
 
 const withResourceInvalidation = async <T>(key: string, request: Promise<T>) => {

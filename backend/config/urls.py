@@ -24,10 +24,13 @@ from apps.accounts.views import (
 from apps.api_testing.views import (
     ApiCaseViewSet,
     ApiDefinitionViewSet,
+    ApiImportBatchViewSet,
+    InternalApiDocumentationViewSet,
     ApiMockRuleViewSet,
     mock_api_response,
     mock_proxy_response,
     ApiModuleViewSet,
+    ApiImportCallLogViewSet,
     ApiScenarioViewSet,
     ApiStepViewSet,
     ApiSuiteViewSet,
@@ -68,6 +71,9 @@ router.register("data-factory-capabilities", DataFactoryCapabilityViewSet)
 router.register("test-data-sources", TestDataSourceViewSet)
 router.register("api-modules", ApiModuleViewSet)
 router.register("api-definitions", ApiDefinitionViewSet)
+router.register("internal-api-documents", InternalApiDocumentationViewSet, basename="internal-api-documents")
+router.register("api-import-call-logs", ApiImportCallLogViewSet, basename="api-import-call-logs")
+router.register("api-import-batches", ApiImportBatchViewSet, basename="api-import-batches")
 router.register("api-test-cases", ApiTestCaseViewSet)
 router.register("api-mock-rules", ApiMockRuleViewSet)
 router.register("api-suites", ApiSuiteViewSet)

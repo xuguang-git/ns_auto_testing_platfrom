@@ -200,8 +200,8 @@ const saveModule = async () => {
     ElMessage.success("模块已保存");
     formVisible.value = false;
     await load();
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.parent?.[0] || error?.response?.data?.detail || "保存模块失败");
+  } catch {
+    // HTTP 拦截器已展示后端返回的具体错误，无需重复提示。
   } finally {
     saving.value = false;
   }
