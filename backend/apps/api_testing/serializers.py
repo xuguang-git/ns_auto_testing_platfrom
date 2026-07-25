@@ -33,7 +33,7 @@ class DefaultProjectSerializerMixin:
 
 
 class ApiModuleSerializer(DefaultProjectSerializerMixin, OperatorFieldsMixin, serializers.ModelSerializer):
-    code = serializers.SlugField(max_length=32, validators=[])
+    code = serializers.SlugField(max_length=43, validators=[])
     api_count = serializers.SerializerMethodField()
     test_case_count = serializers.SerializerMethodField()
     depth = serializers.SerializerMethodField()

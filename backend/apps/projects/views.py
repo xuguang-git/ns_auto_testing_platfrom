@@ -78,7 +78,7 @@ class PlatformViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
             managed_platform=platform,
             platform=legacy_code,
             parent=None,
-            code="unassigned",
+            code=f"unassigned-{platform.code}",
             defaults={
                 "name": "未分配",
                 "description": "平台默认模块，用于暂存尚未分类的接口",

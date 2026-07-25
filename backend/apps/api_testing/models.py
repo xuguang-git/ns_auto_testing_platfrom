@@ -54,7 +54,7 @@ class ApiModule(OwnedModel):
     platform = models.CharField(max_length=32)
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="children")
     name = models.CharField(max_length=100)
-    code = models.SlugField(max_length=32, unique=True)
+    code = models.SlugField(max_length=43, unique=True)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
