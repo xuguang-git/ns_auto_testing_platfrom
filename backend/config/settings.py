@@ -164,10 +164,15 @@ CELERY_RESULT_EXPIRES = env("CELERY_RESULT_EXPIRES")
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_TASK_ROUTES = {"apps.api_testing.tasks.process_api_import_batch": {"queue": "api_import"}}
 CELERY_BEAT_SCHEDULE = {
     "dispatch-scheduled-plans-every-minute": {
         "task": "apps.scheduling.tasks.dispatch_scheduled_plans",
         "schedule": 60.0,
+    },
+    "cleanup-expired-open-api-history-daily": {
+        "task": "apps.api_testing.tasks.cleanup_expired_open_api_history",
+        "schedule": 24 * 60 * 60,
     }
 }
 

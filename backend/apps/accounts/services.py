@@ -142,6 +142,7 @@ ACTION_PERMISSION_DEFINITIONS = [
     ("api.write", "api", "write", "接口维护", False),
     ("api.delete", "api", "delete", "接口删除"),
     ("api.debug", "api", "execute", "接口调试"),
+    ("api.import", "api", "execute", "接口批量导入"),
     ("api_case.read", "api_case", "read", "用例查看"),
     ("api_case.create", "api_case", "create", "用例新增"),
     ("api_case.update", "api_case", "update", "用例编辑"),

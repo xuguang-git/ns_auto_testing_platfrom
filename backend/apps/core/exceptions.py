@@ -5,7 +5,7 @@ from typing import Any
 
 from django.http import Http404
 from rest_framework import status
-from rest_framework.exceptions import APIException, ErrorDetail, NotAuthenticated, PermissionDenied, Throttled, ValidationError
+from rest_framework.exceptions import APIException, ErrorDetail, NotAuthenticated, ParseError, PermissionDenied, Throttled, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
 
@@ -28,6 +28,16 @@ def unified_exception_handler(exc, context):
         response.data = exc.payload
         return response
 
+    if isinstance(exc, ParseError):
+        _log_parse_error(exc, context)
+        response.data = {
+            "code": BAD_REQUEST,
+            "message": "请求参数格式不正确，请检查 JSON 格式后重试。",
+            "data": None,
+            "errors": {},
+        }
+        return response
+
     if _is_business_envelope(response.data):
         return response
 
@@ -39,6 +49,19 @@ def unified_exception_handler(exc, context):
         "errors": _normalize_errors(response.data),
     }
     return response
+
+
+def _log_parse_error(exc: ParseError, context: dict[str, Any]) -> None:
+    request = context.get("request")
+    user = getattr(request, "user", None)
+    logger.warning(
+        "请求参数解析失败: method=%s path=%s user_id=%s request_id=%s error=%s",
+        getattr(request, "method", ""),
+        getattr(request, "path", ""),
+        getattr(user, "pk", None),
+        getattr(request, "META", {}).get("HTTP_X_REQUEST_ID", ""),
+        str(exc),
+    )
 
 
 def _is_business_envelope(data: Any) -> bool:

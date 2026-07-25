@@ -1,19 +1,24 @@
 import json
 import time
+import uuid
 
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
+from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import decorators, response, status, viewsets
 from rest_framework import exceptions as drf_exceptions
+from rest_framework.permissions import IsAuthenticated
 
 from apps.accounts.models import AuditLog
 from apps.accounts.permissions import action_permission
+from apps.accounts.services import has_permission
 from apps.accounts.security import authenticate_access_token, get_access_token_from_request
-from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiSuiteCase, ApiSuiteScenario, ApiTestCase
+from apps.api_testing.import_services import API_IMPORT_QUEUE, batch_summary, create_import_batch
+from apps.api_testing.models import ApiCase, ApiDefinition, ApiImportBatch, ApiImportItem, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiSuiteCase, ApiSuiteScenario, ApiTestCase, OpenApiCallLog, OpenApiCapability
 from apps.api_testing.serializers import (
     ApiCaseSerializer,
     ApiDefinitionSerializer,
@@ -25,14 +30,20 @@ from apps.api_testing.serializers import (
     ApiSuiteDetailSerializer,
     ApiSuiteMembersSerializer,
     ApiTestCaseSerializer,
+    ApiImportItemResultSerializer,
+    BatchImportRequestSerializer,
+    OpenApiCallLogSerializer,
+    OpenApiCapabilitySerializer,
 )
 from apps.api_testing.mock_security import verify_mock_rule_token
 from apps.api_testing.services import execute_debug_request
 from apps.core.delete_guards import DeleteGuardMixin, DeleteGuardRule
+from apps.core.response_codes import VALIDATION_ERROR
 from apps.core.viewsets import OperatorAuditModelViewSet
 from apps.projects.services import get_default_project
 from apps.scheduling.models import ScheduledPlan
 from apps.test_runs.snapshots import count_active_runs_using_api, count_active_runs_using_case, count_active_runs_using_scenario
+from apps.api_testing.tasks import process_api_import_batch
 
 
 MOCK_BLOCKED_RESPONSE_HEADERS = {
@@ -45,6 +56,16 @@ MOCK_BLOCKED_RESPONSE_HEADERS = {
     "te",
     "trailer",
     "upgrade",
+}
+
+BATCH_IMPORT_VALIDATION_DETAIL_LIMIT = 10
+BATCH_IMPORT_FIELD_LABELS = {
+    "items": "接口列表",
+    "name": "接口名称",
+    "path": "接口路径",
+    "method": "请求方式",
+    "params": "请求参数",
+    "module_code": "模块编码",
 }
 
 
@@ -191,6 +212,158 @@ def mock_proxy_response(request, proxy_path: str = ""):
     return _serve_mock_rule(request, rule)
 
 
+def _success(data, message="操作成功", status_code=status.HTTP_200_OK):
+    return response.Response({"code": 0, "message": message, "data": data, "errors": {}}, status=status_code)
+
+
+def _validation_error_text(errors):
+    if isinstance(errors, (list, tuple)) and errors:
+        return _validation_error_text(errors[0])
+    if isinstance(errors, dict) and errors:
+        field_name, field_errors = next(iter(errors.items()))
+        return f"{BATCH_IMPORT_FIELD_LABELS.get(field_name, field_name)}：{_validation_error_text(field_errors)}"
+    return str(errors)
+
+
+def _validation_error_details(field_errors):
+    if not isinstance(field_errors, dict):
+        return [{"field": "non_field_errors", "field_name": "参数", "message": _validation_error_text(field_errors)}]
+    return [
+        {
+            "field": field_name,
+            "field_name": BATCH_IMPORT_FIELD_LABELS.get(field_name, field_name),
+            "message": _validation_error_text(error),
+        }
+        for field_name, error in field_errors.items()
+    ]
+
+
+def _batch_import_validation_response(errors):
+    item_errors = errors.get("items", []) if isinstance(errors, dict) else []
+    invalid_items = []
+    is_item_detail_list = isinstance(item_errors, list) and all(not item or isinstance(item, dict) for item in item_errors)
+    if is_item_detail_list:
+        for index, field_errors in enumerate(item_errors, start=1):
+            if field_errors:
+                invalid_items.append({"item_no": index, "errors": _validation_error_details(field_errors)})
+
+    invalid_item_nos = [item["item_no"] for item in invalid_items]
+    truncated = len(invalid_items) > BATCH_IMPORT_VALIDATION_DETAIL_LIMIT
+    request_error_fields = {
+        key: value
+        for key, value in errors.items()
+        if key != "items" or not is_item_detail_list
+    } if isinstance(errors, dict) else {}
+    request_errors = _validation_error_details(request_error_fields)
+    if invalid_items:
+        if truncated:
+            message = f"本次共有 {len(invalid_items)} 个接口存在参数问题，已展示前 {BATCH_IMPORT_VALIDATION_DETAIL_LIMIT} 个，请修正后重试。"
+        else:
+            message = f"接口参数校验失败，共 {len(invalid_items)} 个接口存在问题。"
+    else:
+        message = "请求参数校验失败，请检查请求级参数。"
+
+    return response.Response(
+        {
+            "code": VALIDATION_ERROR,
+            "message": message,
+            "data": {
+                "invalid_item_nos": invalid_item_nos,
+                "truncated": truncated,
+                "items": invalid_items[:BATCH_IMPORT_VALIDATION_DETAIL_LIMIT],
+                "request_errors": request_errors,
+            },
+            "errors": {},
+        },
+        status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    )
+
+
+def _module_code_rows():
+    rows = []
+    for module in ApiModule.objects.select_related("project", "parent").filter(is_active=True).order_by("platform", "sort_order", "id"):
+        path = []
+        current = module
+        while current:
+            path.append(current.name)
+            current = current.parent
+        rows.append({"code": module.code, "name": module.name, "path_names": list(reversed(path)), "project_name": module.project.name, "platform": module.platform})
+    return rows
+
+
+def _curl_example(request, capability):
+    example = json.dumps(capability.documentation.get("request_example", {}), ensure_ascii=False)
+    endpoint = request.build_absolute_uri(capability.path)
+    return "\n".join([
+        f"curl -X {capability.method} '{endpoint}' \\",
+        "  --cookie 'ns_access_token=<access_token>' \\",
+        "  -H 'Content-Type: application/json' \\",
+        f"  --data '{example}'",
+    ])
+
+
+class InternalApiDocumentationViewSet(viewsets.ViewSet):
+    lookup_value_regex = "[^/]+"
+    permission_classes = [action_permission("api.import")]
+
+    def list(self, request):
+        queryset = OpenApiCapability.objects.order_by("sort_order", "id")
+        data = [{"code": item.code, "name": item.name, "version": item.version} for item in queryset]
+        return _success(data)
+
+    @decorators.action(detail=True, methods=["get"], url_path="documentation")
+    def documentation(self, request, pk=None):
+        capability = OpenApiCapability.objects.filter(code=pk).first()
+        if not capability:
+            raise drf_exceptions.NotFound("内部接口说明不存在。")
+        rows = _module_code_rows()
+        data = OpenApiCapabilitySerializer(capability).data
+        data.update({
+            "module_codes": rows,
+            "request_example": capability.documentation.get("request_example", {}),
+            "curl_example": _curl_example(request, capability),
+        })
+        return _success(data)
+
+class ApiImportCallLogViewSet(viewsets.ViewSet):
+    permission_classes = [action_permission("api.import")]
+
+    def list(self, request):
+        queryset = OpenApiCallLog.objects.select_related("caller", "related_batch").order_by("-created_at")
+        keyword = request.query_params.get("keyword", "").strip()
+        if keyword:
+            queryset = queryset.filter(Q(request_id__icontains=keyword) | Q(related_batch__batch_no__icontains=keyword))
+        for name in ["request_id", "capability_code", "status"]:
+            if request.query_params.get(name):
+                queryset = queryset.filter(**{name: request.query_params[name]})
+        page = int(request.query_params.get("page", 1))
+        page_size = 15
+        count = queryset.count()
+        total_pages = max((count + page_size - 1) // page_size, 1)
+        if page < 1 or page > total_pages:
+            raise drf_exceptions.ValidationError({"page": "页码超出范围。"})
+        page_items = queryset[(page - 1) * page_size:page * page_size]
+        return _success({"count": count, "page": page, "page_size": page_size, "total_pages": total_pages, "results": OpenApiCallLogSerializer(page_items, many=True).data})
+
+    def retrieve(self, request, pk=None):
+        item = OpenApiCallLog.objects.select_related("caller", "related_batch").filter(request_id=pk).first()
+        if not item:
+            raise drf_exceptions.NotFound("调用日志不存在。")
+        return _success(OpenApiCallLogSerializer(item).data)
+
+
+class ApiImportBatchViewSet(viewsets.ViewSet):
+    permission_classes = [action_permission("api.import")]
+
+    def retrieve(self, request, pk=None):
+        batch = ApiImportBatch.objects.filter(batch_no=pk).first()
+        if not batch:
+            raise drf_exceptions.NotFound("导入批次不存在。")
+        data = batch_summary(batch)
+        data["items"] = ApiImportItemResultSerializer(batch.items.exclude(status=ApiImportItem.Status.SUCCESS), many=True).data
+        return _success(data)
+
+
 class ApiModuleViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
     queryset = ApiModule.objects.select_related("project", "managed_platform", "parent").prefetch_related("apis").all()
     serializer_class = ApiModuleSerializer
@@ -316,12 +489,58 @@ class ApiDefinitionViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
             return queryset.filter(is_active=True).exclude(status=ApiDefinition.Status.DEPRECATED)
         return queryset
 
+    def get_permissions(self):
+        if self.action == "batch_import":
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
     @decorators.action(detail=False, methods=["post"], url_path="debug", throttle_scope="api_debug")
     def debug(self, request):
         result = execute_debug_request(request.data)
         if result.get("ok") is False:
             return response.Response(result, status=status.HTTP_400_BAD_REQUEST)
         return response.Response(result, status=status.HTTP_200_OK)
+
+    @decorators.action(detail=False, methods=["post"], url_path="batch-import")
+    def batch_import(self, request):
+        capability = OpenApiCapability.objects.filter(code="api_definition.batch_import").first()
+        request_id = f"req_{uuid.uuid4().hex[:16]}"
+        if not has_permission(request.user, "api.import"):
+            self._write_call_log(request_id, request, capability, OpenApiCallLog.Status.AUTH_FAILED, {"state": "未处理"})
+            raise drf_exceptions.PermissionDenied("没有接口导入权限。")
+        serializer = BatchImportRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            self._write_call_log(request_id, request, capability, OpenApiCallLog.Status.BUSINESS_FAILED, {"state": "未处理"})
+            return _batch_import_validation_response(serializer.errors)
+        try:
+            batch = create_import_batch(user=request.user, **serializer.validated_data)
+            async_result = process_api_import_batch.apply_async(args=[batch.id], queue=API_IMPORT_QUEUE)
+            batch.celery_task_id = async_result.id
+            batch.save(update_fields=["celery_task_id", "updated_at"])
+        except ValueError as exc:
+            self._write_call_log(request_id, request, capability, OpenApiCallLog.Status.BUSINESS_FAILED, {"state": "未处理"})
+            raise drf_exceptions.ValidationError({"detail": str(exc)})
+        except Exception:
+            self._write_call_log(request_id, request, capability, OpenApiCallLog.Status.SYSTEM_FAILED, {"state": "未处理"})
+            raise
+        summary = batch_summary(batch)
+        self._write_call_log(request_id, request, capability, OpenApiCallLog.Status.SUCCESS, summary, batch)
+        result = _success(summary, "导入任务已进入队列。", status.HTTP_202_ACCEPTED)
+        result["X-Request-ID"] = request_id
+        return result
+
+    @staticmethod
+    def _write_call_log(request_id, request, capability, log_status, summary, batch=None):
+        OpenApiCallLog.objects.create(
+            request_id=request_id,
+            capability=capability,
+            capability_code=capability.code if capability else "api_definition.batch_import",
+            capability_name=capability.name if capability else "批量导入接口资产",
+            caller=request.user if getattr(request.user, "is_authenticated", False) else None,
+            status=log_status,
+            result_summary=summary,
+            related_batch=batch,
+        )
 
 
 class ApiTestCaseViewSet(DeleteGuardMixin, OperatorAuditModelViewSet):
