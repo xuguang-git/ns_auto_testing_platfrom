@@ -233,7 +233,7 @@
                 <el-button type="primary" :loading="savingSuite" :disabled="!selectedSuite" @click="saveCurrentSuite">保存</el-button>
               </div>
               <el-input v-if="editingSuiteDescription" v-model="suiteDescriptionDraft" class="suite-description-input" maxlength="200" show-word-limit @blur="saveSuiteDescription" @keyup.enter="saveSuiteDescription" @keyup.esc="cancelSuiteDescriptionEdit" />
-              <button v-else class="suite-description-button" type="button" :disabled="!selectedSuite" @click="startSuiteDescriptionEdit">{{ selectedSuite?.description || "组装场景用例和单接口用例" }}</button>
+              <button v-else class="suite-description-button" type="button" :disabled="!selectedSuite" @click="startSuiteDescriptionEdit">{{ selectedSuite?.description || "暂无说明，点击此处填写" }}</button>
             </header>
 
             <div class="suite-content-head">
