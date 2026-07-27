@@ -3,7 +3,7 @@
     <aside class="app-sidebar">
       <RouterLink class="brand" to="/dashboard">
         <span class="brand-mark brand-image"><img src="/system-icon.png" alt="NS" /></span>
-        <span class="brand-name">NS-ATP</span>
+        <span class="brand-name">NS-TESTING</span>
       </RouterLink>
 
       <nav class="side-nav grouped-nav">
@@ -212,6 +212,7 @@ const baseNavGroups: NavGroup[] = [
       { label: "消息通知", path: "/notifications", icon: icons.notification, section: "配置管理", permission: "page.config.notification" },
       { label: "消息模板", path: "/notification-templates", icon: icons.report, section: "配置管理", permission: "page.config.notification_template" },
       { label: "数据库管理", path: "/database-management", icon: icons.database, section: "配置管理", permission: "page.config.database" },
+      { label: "内部接口说明", path: "/api-integration", icon: icons.api, section: "配置管理", permission: "api.import" },
     ],
   },
 ];

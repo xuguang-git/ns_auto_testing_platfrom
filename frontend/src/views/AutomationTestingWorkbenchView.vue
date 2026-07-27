@@ -192,7 +192,6 @@
           <aside class="scenario-list-panel">
             <div class="scenario-list-head">
               <strong>套件列表</strong>
-              <el-button size="small" type="primary" @click="openCreateSuiteDialog">新增</el-button>
             </div>
             <el-input v-model="suiteKeyword" clearable placeholder="搜索套件名称" />
             <div class="scenario-list-body">
@@ -207,7 +206,7 @@
                   <b>{{ suite.name }}</b>
                   <em>{{ suite.description || "暂无说明" }}</em>
                 </span>
-                <small>{{ suiteCaseIds.length + suiteScenarioIds.length }}</small>
+                <small>{{ Number(suite.case_count || 0) + Number(suite.scenario_count || 0) }}</small>
               </button>
               <el-empty v-if="!filteredSuites.length" description="暂无套件" :image-size="72" />
             </div>
@@ -216,16 +215,25 @@
           <section class="scenario-canvas">
             <header class="scenario-hero">
               <div class="scenario-title-line">
-                <el-select v-model="suitePriority" class="scenario-priority">
-                  <el-option label="P0" value="P0" />
-                  <el-option label="P1" value="P1" />
-                  <el-option label="P2" value="P2" />
-                  <el-option label="P3" value="P3" />
+                <el-dropdown trigger="click" :disabled="!selectedSuite || savingSuitePriority" @command="saveSuitePriority">
+                  <button class="suite-priority-badge" :class="`priority-${suitePriority.toLowerCase()}`" type="button">{{ suitePriority }}</button>
+                  <template #dropdown><el-dropdown-menu><el-dropdown-item v-for="item in suitePriorityOptions" :key="item" :command="item"><span class="suite-priority-badge" :class="`priority-${item.toLowerCase()}`">{{ item }}</span></el-dropdown-item></el-dropdown-menu></template>
+                </el-dropdown>
+                <el-input v-if="editingSuiteTitle" v-model="suiteNameDraft" class="suite-title-input" maxlength="40" show-word-limit @blur="saveSuiteName" @keyup.enter="saveSuiteName" @keyup.esc="cancelSuiteNameEdit" />
+                <button v-else class="suite-title-button" type="button" :disabled="!selectedSuite" @click="startSuiteNameEdit">{{ selectedSuite?.name || "请选择套件" }}</button>
+                <el-select v-model="suiteEnvironment" class="suite-environment-select" placeholder="请选择运行环境" :disabled="!selectedSuite">
+                  <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.id" />
                 </el-select>
-                <h2>{{ selectedSuite?.name || "请选择或新增套件" }}</h2>
               </div>
-              <button class="scenario-desc-button" @click="openEditSuiteDialog">编辑名称</button>
-              <p>{{ selectedSuite?.description || "新增套件后可维护场景用例和单接口用例。" }}</p>
+              <div class="suite-fixed-actions">
+                <el-tooltip content="暂不可操作，后端功能保留" placement="top">
+                  <span><el-button type="primary" disabled @click="runSuite">运行</el-button></span>
+                </el-tooltip>
+                <el-button type="danger" :disabled="!selectedSuite" @click="deleteSuite">删除</el-button>
+                <el-button type="primary" :loading="savingSuite" :disabled="!selectedSuite" @click="saveCurrentSuite">保存</el-button>
+              </div>
+              <el-input v-if="editingSuiteDescription" v-model="suiteDescriptionDraft" class="suite-description-input" maxlength="200" show-word-limit @blur="saveSuiteDescription" @keyup.enter="saveSuiteDescription" @keyup.esc="cancelSuiteDescriptionEdit" />
+              <button v-else class="suite-description-button" type="button" :disabled="!selectedSuite" @click="startSuiteDescriptionEdit">{{ selectedSuite?.description || "暂无说明，点击此处填写" }}</button>
             </header>
 
             <div class="suite-content-head">
@@ -243,7 +251,10 @@
                 <b>{{ scenario.priority || "P1" }}</b>
                 <strong>{{ scenario.name }}</strong>
                 <em>{{ scenario.description || "-" }}</em>
-                <el-button class="suite-remove-button" :icon="Delete" circle title="从套件中移除" @click="removeSuiteScenario(scenario.id)" />
+                <div class="suite-member-actions">
+                  <el-button link type="primary" @click="openSuiteScenarioSteps(scenario)">查看步骤</el-button>
+                  <el-button class="suite-remove-button" :icon="Delete" circle title="从套件中移除" @click="removeSuiteScenario(scenario.id)" />
+                </div>
               </div>
               <el-empty v-if="!selectedSuiteScenarios.length" description="暂无场景用例" :image-size="64" />
             </section>
@@ -255,35 +266,14 @@
                 <b>{{ item.priority || "P1" }}</b>
                 <strong>{{ item.name }}</strong>
                 <em>{{ item.method }} {{ item.api_path }}</em>
-                <el-button class="suite-remove-button" :icon="Delete" circle title="从套件中移除" @click="removeSuiteCase(item.id)" />
+                <div class="suite-member-actions">
+                  <el-button class="suite-remove-button" :icon="Delete" circle title="从套件中移除" @click="removeSuiteCase(item.id)" />
+                </div>
               </div>
               <el-empty v-if="!selectedSuiteCases.length" description="暂无单接口用例" :image-size="64" />
             </section>
           </section>
 
-          <aside class="scenario-runner">
-            <label>运行环境</label>
-            <el-select v-model="suiteEnvironment" placeholder="请选择运行环境" :disabled="!selectedSuite">
-              <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.id" />
-            </el-select>
-            <label>运行模式</label>
-            <el-select v-model="suiteRunMode" :disabled="!selectedSuite">
-              <el-option label="串行" value="serial" />
-              <el-option label="并行" value="parallel" />
-            </el-select>
-            <label>运行于</label>
-            <el-select v-model="suiteExecutor" :disabled="!selectedSuite">
-              <el-option label="默认执行器" value="default" />
-            </el-select>
-            <div class="scenario-runner-line">
-              <span>推送</span>
-              <el-switch v-model="suitePush" :disabled="!selectedSuite" />
-            </div>
-            <div class="scenario-runner-actions">
-              <el-button type="primary" :disabled="!selectedSuite" @click="runSuite">运行</el-button>
-              <el-button :loading="savingSuite" :disabled="!selectedSuite" @click="saveCurrentSuite">保存</el-button>
-            </div>
-          </aside>
         </div>
       </template>
 
@@ -332,7 +322,7 @@
     </el-dialog>
 
     <el-dialog v-model="scenarioPickerDialog" title="添加场景用例" width="720px">
-      <el-table :data="scenarios" height="420" @selection-change="suiteScenarioPickIds = $event.map((item: ApiScenario) => item.id)">
+      <el-table :data="scenarioPickerItems" height="420" @selection-change="suiteScenarioPickIds = $event.map((item: ApiScenario) => item.id)">
         <el-table-column type="selection" width="48" />
         <el-table-column prop="name" label="场景名称" min-width="180" />
         <el-table-column prop="priority" label="优先级" width="90" />
@@ -345,7 +335,7 @@
     </el-dialog>
 
     <el-dialog v-model="casePickerDialog" title="添加单接口用例" width="760px">
-      <el-table :data="cases" height="420" @selection-change="suiteCasePickIds = $event.map((item: ApiTestCase) => item.id)">
+      <el-table :data="casePickerItems" height="420" @selection-change="suiteCasePickIds = $event.map((item: ApiTestCase) => item.id)">
         <el-table-column type="selection" width="48" />
         <el-table-column prop="name" label="用例名称" min-width="180" />
         <el-table-column prop="method" label="方法" width="90" />
@@ -559,7 +549,7 @@ interface ApiTestCase {
   status: string;
   priority: string;
 }
-interface ApiSuite { id: number; name: string; description?: string; case_ids?: number[]; run_config?: Record<string, any>; is_active?: boolean }
+interface ApiSuite { id: number; name: string; description?: string; case_count?: number; scenario_count?: number; case_items?: ApiTestCase[]; scenario_items?: ApiScenario[]; run_config?: Record<string, any>; is_active?: boolean }
 interface TestDataSource { id: number; name: string; description?: string; is_active?: boolean }
 interface ScenarioRunConfig {
   data_source?: number;
@@ -570,7 +560,7 @@ interface ScenarioRunConfig {
   share?: boolean;
   run_mode?: string;
 }
-interface ApiScenario { id: number; suite: number; environment?: number; name: string; description?: string; priority?: string; is_active?: boolean; run_config?: ScenarioRunConfig }
+interface ApiScenario { id: number; project?: number; environment?: number; name: string; description?: string; priority?: string; is_active?: boolean; run_config?: ScenarioRunConfig }
 interface ApiStep {
   id?: number;
   scenario?: number;
@@ -652,13 +642,22 @@ const suiteKeyword = ref("");
 const suiteDialog = ref(false);
 const suiteForm = reactive({ name: "" });
 const editingSuiteName = ref(false);
+const editingSuiteTitle = ref(false);
+const suiteNameDraft = ref("");
+const savingSuiteTitle = ref(false);
+const editingSuiteDescription = ref(false);
+const suiteDescriptionDraft = ref("");
+const savingSuiteDescription = ref(false);
+const savingSuitePriority = ref(false);
+const suitePriorityOptions = ["P0", "P1", "P2", "P3"];
 const suitePriority = ref("P2");
 const suiteCaseIds = ref<number[]>([]);
 const suiteScenarioIds = ref<number[]>([]);
+const suiteCaseItems = ref<ApiTestCase[]>([]);
+const suiteScenarioItems = ref<ApiScenario[]>([]);
+const casePickerItems = ref<ApiTestCase[]>([]);
+const scenarioPickerItems = ref<ApiScenario[]>([]);
 const suiteEnvironment = ref<number>();
-const suiteRunMode = ref("serial");
-const suiteExecutor = ref("default");
-const suitePush = ref(false);
 const savingSuite = ref(false);
 const scenarioPickerDialog = ref(false);
 const casePickerDialog = ref(false);
@@ -736,8 +735,8 @@ const filteredCases = computed(() =>
 );
 const filteredScenarios = computed(() => scenarios.value.filter((item) => !scenarioKeyword.value || item.name.toLowerCase().includes(scenarioKeyword.value.toLowerCase())));
 const filteredSuites = computed(() => suites.value.filter((item) => !suiteKeyword.value || item.name.toLowerCase().includes(suiteKeyword.value.toLowerCase())));
-const selectedSuiteCases = computed(() => suiteCaseIds.value.map((id) => cases.value.find((item) => item.id === id)).filter(Boolean) as ApiTestCase[]);
-const selectedSuiteScenarios = computed(() => suiteScenarioIds.value.map((id) => scenarios.value.find((item) => item.id === id)).filter(Boolean) as ApiScenario[]);
+const selectedSuiteCases = computed(() => suiteCaseItems.value);
+const selectedSuiteScenarios = computed(() => suiteScenarioItems.value);
 const passedStepCount = computed(() => scenarioResults.value.filter((item) => item.passed).length);
 const activeTestDataSources = computed(() => testDataSources.value.filter((item) => item.is_active));
 const selectedEnvironmentName = computed(() => environments.value.find((item) => item.id === runEnvironment.value)?.name || "-");
@@ -783,31 +782,42 @@ const safeLoadList = async <T>(request: () => Promise<{ data: unknown }>, label:
   }
 };
 
-const load = async () => {
+const loadSingleFeature = async () => {
   loading.value = true;
   try {
-    const [caseRows, platformRowsData, apiRows, envRows, suiteRows, scenarioRows, dataSourceRows] = await Promise.all([
-      safeLoadList<ApiTestCase>(() => platformApi.apiTestCases(), "单接口用例"),
-      safeLoadList<any>(() => platformApi.platforms(), "平台"),
-      safeLoadList<ApiDefinition>(() => platformApi.apiDefinitions(), "接口"),
-      safeLoadList<any>(() => platformApi.environments(), "环境"),
-      safeLoadList<ApiSuite>(() => platformApi.apiSuites(), "测试套件"),
-      safeLoadList<ApiScenario>(() => platformApi.apiScenarios(), "场景"),
-      safeLoadList<TestDataSource>(() => platformApi.testDataSources(), "测试数据源"),
-    ]);
-    cases.value = caseRows;
-    platformRows.value = platformRowsData;
-    apis.value = apiRows;
-    environments.value = envRows;
-    suites.value = suiteRows;
-    scenarios.value = scenarioRows;
-    testDataSources.value = dataSourceRows;
+    environments.value = await safeLoadList<any>(() => platformApi.environments(), "环境");
     runEnvironment.value = runEnvironment.value || environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id;
-    if (!selectedScenario.value && scenarios.value.length) await selectScenario(scenarios.value[0]);
-    if (!selectedSuite.value && suites.value.length) selectSuite(suites.value[0]);
   } finally {
     loading.value = false;
   }
+};
+const loadScenarioFeature = async () => {
+  loading.value = true;
+  try {
+    const [scenarioRows, apiRows, envRows, dataSourceRows] = await Promise.all([
+      safeLoadList<ApiScenario>(() => platformApi.apiScenarios(), "场景"),
+      safeLoadList<ApiDefinition>(() => platformApi.apiDefinitions(), "接口"),
+      safeLoadList<any>(() => platformApi.environments(), "环境"),
+      safeLoadList<TestDataSource>(() => platformApi.testDataSources(), "测试数据源"),
+    ]);
+    scenarios.value = scenarioRows;
+    apis.value = apiRows;
+    environments.value = envRows;
+    testDataSources.value = dataSourceRows;
+    if (!selectedScenario.value && scenarios.value.length) await selectScenario(scenarios.value[0]);
+  } finally { loading.value = false; }
+};
+const loadSuiteFeature = async () => {
+  loading.value = true;
+  try {
+    suites.value = await safeLoadList<ApiSuite>(() => platformApi.apiSuites(), "测试套件");
+    if (!selectedSuite.value && suites.value.length) await selectSuite(suites.value[0]);
+  } finally { loading.value = false; }
+};
+const load = async () => {
+  if (activeFeature.value === "single") return loadSingleFeature();
+  if (activeFeature.value === "scenario") return loadScenarioFeature();
+  if (activeFeature.value === "suite") return loadSuiteFeature();
 };
 
 const primaryAction = () => {
@@ -828,14 +838,6 @@ const primaryAction = () => {
     return;
   }
   ElMessage.info(`${currentFeature.value.label}将在后续阶段接入。`);
-};
-
-const defaultSuite = async () => {
-  const existing = suites.value[0];
-  if (existing) return existing;
-  const { data } = await platformApi.createApiSuite({ name: "默认场景套件", description: "系统自动创建，用于承载场景测试。" });
-  suites.value = [data, ...suites.value];
-  return data as ApiSuite;
 };
 
 const cloneJson = <T>(value: T, fallback: T): T => {
@@ -859,34 +861,102 @@ const applySuiteRunConfig = (suite: ApiSuite) => {
   const config = suite.run_config || {};
   suitePriority.value = config.priority || "P2";
   suiteEnvironment.value = config.environment || environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id;
-  suiteRunMode.value = config.run_mode || "serial";
-  suiteExecutor.value = config.executor || "default";
-  suitePush.value = Boolean(config.push);
 };
 const buildSuiteRunConfig = () => ({
   priority: suitePriority.value,
   environment: suiteEnvironment.value,
-  run_mode: suiteRunMode.value,
-  executor: suiteExecutor.value || "default",
-  push: suitePush.value,
 });
-const selectSuite = (suite: ApiSuite) => {
-  selectedSuite.value = suite;
-  selectedSuiteId.value = suite.id;
-  suiteCaseIds.value = Array.isArray(suite.case_ids) ? [...suite.case_ids] : [];
-  suiteScenarioIds.value = scenarios.value.filter((item) => item.suite === suite.id).map((item) => item.id);
-  applySuiteRunConfig(suite);
+const applySuiteDetail = (detail: ApiSuite) => {
+  selectedSuite.value = detail;
+  selectedSuiteId.value = detail.id;
+  suiteCaseItems.value = detail.case_items || [];
+  suiteCaseIds.value = suiteCaseItems.value.map((item) => item.id);
+  suiteScenarioItems.value = detail.scenario_items || [];
+  suiteScenarioIds.value = suiteScenarioItems.value.map((item) => item.id);
+  applySuiteRunConfig(detail);
+};
+const selectSuite = async (suite: ApiSuite) => {
+  const { data } = await platformApi.apiSuite(suite.id);
+  applySuiteDetail(data as ApiSuite);
 };
 const openCreateSuiteDialog = () => {
   editingSuiteName.value = false;
   suiteForm.name = "";
   suiteDialog.value = true;
 };
-const openEditSuiteDialog = () => {
+const startSuiteNameEdit = () => {
   if (!selectedSuite.value) return;
-  editingSuiteName.value = true;
-  suiteForm.name = selectedSuite.value.name;
-  suiteDialog.value = true;
+  suiteNameDraft.value = selectedSuite.value.name;
+  editingSuiteTitle.value = true;
+};
+const cancelSuiteNameEdit = () => {
+  editingSuiteTitle.value = false;
+  suiteNameDraft.value = "";
+};
+const saveSuiteName = async () => {
+  if (!selectedSuite.value || savingSuiteTitle.value || !suiteNameDraft.value.trim() || suiteNameDraft.value.trim() === selectedSuite.value.name) {
+    cancelSuiteNameEdit();
+    return;
+  }
+  savingSuiteTitle.value = true;
+  try {
+    const { data } = await platformApi.updateApiSuite(selectedSuite.value.id, { name: suiteNameDraft.value.trim() });
+    selectedSuite.value = { ...selectedSuite.value, ...data };
+    const index = suites.value.findIndex((item) => item.id === selectedSuite.value?.id);
+    if (index >= 0) suites.value.splice(index, 1, { ...suites.value[index], ...data });
+    ElMessage.success("套件名称已更新");
+    cancelSuiteNameEdit();
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.name?.[0] || "更新套件名称失败");
+  } finally {
+    savingSuiteTitle.value = false;
+  }
+};
+const startSuiteDescriptionEdit = () => {
+  if (!selectedSuite.value) return;
+  suiteDescriptionDraft.value = selectedSuite.value.description || "";
+  editingSuiteDescription.value = true;
+};
+const cancelSuiteDescriptionEdit = () => {
+  editingSuiteDescription.value = false;
+  suiteDescriptionDraft.value = "";
+};
+const saveSuiteDescription = async () => {
+  if (!selectedSuite.value || savingSuiteDescription.value || suiteDescriptionDraft.value.trim() === (selectedSuite.value.description || "")) {
+    cancelSuiteDescriptionEdit();
+    return;
+  }
+  savingSuiteDescription.value = true;
+  try {
+    const { data } = await platformApi.updateApiSuite(selectedSuite.value.id, { description: suiteDescriptionDraft.value.trim() });
+    selectedSuite.value = { ...selectedSuite.value, ...data };
+    const index = suites.value.findIndex((item) => item.id === selectedSuite.value?.id);
+    if (index >= 0) suites.value.splice(index, 1, { ...suites.value[index], ...data });
+    ElMessage.success("套件说明已更新");
+    cancelSuiteDescriptionEdit();
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.description?.[0] || "更新套件说明失败");
+  } finally {
+    savingSuiteDescription.value = false;
+  }
+};
+const saveSuitePriority = async (priority: string) => {
+  if (!selectedSuite.value || priority === suitePriority.value || savingSuitePriority.value) return;
+  const previous = suitePriority.value;
+  savingSuitePriority.value = true;
+  try {
+    const { data } = await platformApi.updateApiSuite(selectedSuite.value.id, { run_config: { ...buildSuiteRunConfig(), priority } });
+    suitePriority.value = priority;
+    selectedSuite.value = { ...selectedSuite.value, ...data };
+    const index = suites.value.findIndex((item) => item.id === selectedSuite.value?.id);
+    if (index >= 0) suites.value.splice(index, 1, { ...suites.value[index], ...data });
+    ElMessage.success("套件等级已更新");
+  } catch (error: any) {
+    suitePriority.value = previous;
+    ElMessage.error(error?.response?.data?.detail || "更新套件等级失败");
+  } finally {
+    savingSuitePriority.value = false;
+  }
 };
 const saveSuiteMeta = async () => {
   if (!suiteForm.name.trim()) {
@@ -895,7 +965,7 @@ const saveSuiteMeta = async () => {
   }
   savingSuite.value = true;
   try {
-    const payload = { name: suiteForm.name.trim(), description: selectedSuite.value?.description || "", case_ids: selectedSuite.value?.case_ids || [], run_config: selectedSuite.value?.run_config || {}, is_active: true };
+    const payload = { name: suiteForm.name.trim(), description: selectedSuite.value?.description || "", run_config: selectedSuite.value?.run_config || {}, is_active: true };
     const { data } = editingSuiteName.value && selectedSuite.value
       ? await platformApi.updateApiSuite(selectedSuite.value.id, payload)
       : await platformApi.createApiSuite(payload);
@@ -909,40 +979,33 @@ const saveSuiteMeta = async () => {
     savingSuite.value = false;
   }
 };
-const openScenarioPicker = () => {
+const openScenarioPicker = async () => {
+  scenarioPickerItems.value = unwrapList<ApiScenario>((await platformApi.apiScenarios()).data);
   suiteScenarioPickIds.value = [...suiteScenarioIds.value];
   scenarioPickerDialog.value = true;
 };
-const openCasePicker = () => {
+const openCasePicker = async () => {
+  casePickerItems.value = unwrapList<ApiTestCase>((await platformApi.apiTestCases()).data);
   suiteCasePickIds.value = [...suiteCaseIds.value];
   casePickerDialog.value = true;
 };
 const confirmScenarioPicker = () => {
   suiteScenarioIds.value = Array.from(new Set([...suiteScenarioIds.value, ...suiteScenarioPickIds.value]));
+  suiteScenarioItems.value = suiteScenarioIds.value.map((id) => scenarioPickerItems.value.find((item) => item.id === id) || suiteScenarioItems.value.find((item) => item.id === id)).filter(Boolean) as ApiScenario[];
   scenarioPickerDialog.value = false;
 };
 const confirmCasePicker = () => {
   suiteCaseIds.value = Array.from(new Set([...suiteCaseIds.value, ...suiteCasePickIds.value]));
+  suiteCaseItems.value = suiteCaseIds.value.map((id) => casePickerItems.value.find((item) => item.id === id) || suiteCaseItems.value.find((item) => item.id === id)).filter(Boolean) as ApiTestCase[];
   casePickerDialog.value = false;
 };
 const removeSuiteScenario = (id: number) => {
   suiteScenarioIds.value = suiteScenarioIds.value.filter((item) => item !== id);
+  suiteScenarioItems.value = suiteScenarioItems.value.filter((item) => item.id !== id);
 };
 const removeSuiteCase = (id: number) => {
   suiteCaseIds.value = suiteCaseIds.value.filter((item) => item !== id);
-};
-const fallbackSuiteForRemovedScenario = async (currentSuiteId: number) => {
-  const existing = suites.value.find((item) => item.id !== currentSuiteId);
-  if (existing) return existing;
-  const { data } = await platformApi.createApiSuite({
-    name: "未分配场景",
-    description: "系统自动创建，用于承载从套件中移除但不删除数据的场景。",
-    case_ids: [],
-    run_config: {},
-    is_active: true,
-  });
-  suites.value.unshift(data);
-  return data as ApiSuite;
+  suiteCaseItems.value = suiteCaseItems.value.filter((item) => item.id !== id);
 };
 const saveCurrentSuite = async () => {
   if (!selectedSuite.value) return;
@@ -952,37 +1015,47 @@ const saveCurrentSuite = async () => {
   }
   savingSuite.value = true;
   try {
-    const originalScenarioIds = scenarios.value.filter((item) => item.suite === selectedSuite.value?.id).map((item) => item.id);
-    const removedScenarioIds = originalScenarioIds.filter((id) => !suiteScenarioIds.value.includes(id));
-    const fallbackSuite = removedScenarioIds.length ? await fallbackSuiteForRemovedScenario(selectedSuite.value.id) : undefined;
-    const { data } = await platformApi.updateApiSuite(selectedSuite.value.id, {
-      name: selectedSuite.value.name,
-      description: selectedSuite.value.description || "",
+    const { data } = await platformApi.updateApiSuiteMembers(selectedSuite.value.id, {
+      scenario_ids: suiteScenarioIds.value,
       case_ids: suiteCaseIds.value,
       run_config: buildSuiteRunConfig(),
-      is_active: selectedSuite.value.is_active !== false,
     });
-    await Promise.all(
-      suiteScenarioIds.value.map((id) => {
-        const scenario = scenarios.value.find((item) => item.id === id);
-        return scenario ? platformApi.updateApiScenario(id, { suite: data.id }) : Promise.resolve();
-      }),
-    );
-    if (fallbackSuite) {
-      await Promise.all(removedScenarioIds.map((id) => platformApi.updateApiScenario(id, { suite: fallbackSuite.id })));
-    }
-    const suiteIndex = suites.value.findIndex((item) => item.id === data.id);
-    if (suiteIndex >= 0) suites.value.splice(suiteIndex, 1, data);
-    scenarios.value = scenarios.value.map((item) => {
-      if (suiteScenarioIds.value.includes(item.id)) return { ...item, suite: data.id };
-      if (fallbackSuite && removedScenarioIds.includes(item.id)) return { ...item, suite: fallbackSuite.id };
-      return item;
-    });
-    selectSuite(data);
+    const detail = data as ApiSuite;
+    const suiteIndex = suites.value.findIndex((item) => item.id === detail.id);
+    if (suiteIndex >= 0) suites.value.splice(suiteIndex, 1, { ...suites.value[suiteIndex], ...detail });
+    applySuiteDetail(detail);
     ElMessage.success("套件已保存");
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.scenario_ids?.[0] || error?.response?.data?.case_ids?.[0] || error?.response?.data?.detail || "保存套件成员失败");
   } finally {
     savingSuite.value = false;
   }
+};
+const deleteSuite = async () => {
+  if (!selectedSuite.value) return;
+  await ElMessageBox.confirm(`确认删除测试套件「${selectedSuite.value.name}」？`, "删除确认", { type: "warning" });
+  try {
+    const deletedId = selectedSuite.value.id;
+    await platformApi.deleteApiSuite(deletedId);
+    const remaining = suites.value.filter((item) => item.id !== deletedId);
+    suites.value = remaining;
+    selectedSuite.value = undefined;
+    selectedSuiteId.value = undefined;
+    suiteCaseIds.value = [];
+    suiteScenarioIds.value = [];
+    suiteCaseItems.value = [];
+    suiteScenarioItems.value = [];
+    if (remaining.length) await selectSuite(remaining[0]);
+    ElMessage.success("测试套件已删除");
+  } catch (error: any) {
+    const data = error?.response?.data;
+    ElMessage.error(data?.message || data?.detail || "删除测试套件失败");
+  }
+};
+const openSuiteScenarioSteps = async (scenario: ApiScenario) => {
+  activeFeature.value = "scenario";
+  selectedScenario.value = undefined;
+  await selectScenario(scenario);
 };
 const runSuite = () => ElMessage.info("测试套件运行将在执行器接入后开放。");
 
@@ -1250,9 +1323,7 @@ const saveScenarioMeta = async () => {
   }
   savingScenario.value = true;
   try {
-    const suite = await defaultSuite();
     const scenarioPayload = {
-      suite: suite.id,
       environment: scenarioForm.environment,
       name: scenarioForm.name.trim(),
       description: scenarioForm.description,
@@ -1268,7 +1339,9 @@ const saveScenarioMeta = async () => {
     selectedScenario.value = scenario;
     selectedScenarioId.value = scenario.id;
     applyScenarioRunConfig(scenario);
-    await load();
+    const index = scenarios.value.findIndex((item) => item.id === scenario.id);
+    if (index >= 0) scenarios.value.splice(index, 1, scenario);
+    else scenarios.value.unshift(scenario);
     await selectScenario(scenario);
   } finally {
     savingScenario.value = false;
@@ -1319,7 +1392,6 @@ const saveCurrentScenario = async () => {
   savingScenario.value = true;
   try {
     const { data } = await platformApi.updateApiScenario(selectedScenario.value.id, {
-      suite: selectedScenario.value.suite,
       name: selectedScenario.value.name,
       description: selectedScenario.value.description || "",
       priority: scenarioPriority.value,
@@ -1342,7 +1414,8 @@ const saveCurrentScenario = async () => {
 const deleteScenario = async () => {
   if (!selectedScenario.value) return;
   await ElMessageBox.confirm(`确认删除场景「${selectedScenario.value.name}」？`, "删除确认", { type: "warning" });
-  await platformApi.deleteApiScenario(selectedScenario.value.id);
+  const deletedId = selectedScenario.value.id;
+  await platformApi.deleteApiScenario(deletedId);
   ElMessage.success("场景已删除");
   selectedScenario.value = undefined;
   selectedScenarioId.value = undefined;
@@ -1350,7 +1423,7 @@ const deleteScenario = async () => {
   resetScenarioForm();
   scenarioSteps.value = [];
   scenarioResults.value = [];
-  await load();
+  scenarios.value = scenarios.value.filter((item) => item.id !== deletedId);
 };
 
 const compareValue = (actual: unknown, expected: string, operator: string) => {
@@ -1506,10 +1579,17 @@ const deleteCase = async (row: ApiTestCase) => {
   await load();
 };
 
-watch(activeFeature, () => {
-  if (activeFeature.value === "scenario" && !selectedScenario.value && scenarios.value.length) selectScenario(scenarios.value[0]);
+watch(activeFeature, async () => {
+  if (activeFeature.value === "scenario" && !scenarios.value.length) await loadScenarioFeature();
+  if (activeFeature.value === "suite" && !suites.value.length) await loadSuiteFeature();
 });
 
 onMounted(load);
 </script>
+
+<style scoped>
+.suite-fixed-actions{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;margin-left:auto;padding:4px 0;background:#fff}
+.scenario-title-line{gap:10px}.suite-title-button{padding:0;border:0;background:transparent;color:var(--gray-900);font-size:24px;font-weight:800;line-height:1.35;cursor:pointer}.suite-title-button:disabled{cursor:default}.suite-title-button:not(:disabled):hover{color:var(--brand)}
+.suite-title-input{width:320px;max-width:48vw}.suite-environment-select{width:180px}.suite-description-button{padding:0;border:0;background:transparent;color:var(--gray-500);font:inherit;text-align:left;cursor:pointer}.suite-description-button:disabled{cursor:default}.suite-description-button:not(:disabled):hover{color:var(--brand)}.suite-description-input{max-width:680px}.suite-priority-badge{min-width:42px;height:26px;border:0;border-radius:6px;padding:0 8px;color:#fff;font-size:12px;font-weight:800;cursor:pointer}.priority-p0{background:#991b1b}.priority-p1{background:#eab308;color:#422006}.priority-p2{background:#2563eb}.priority-p3{background:#6b7280}
+</style>
 

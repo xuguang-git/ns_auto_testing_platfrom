@@ -73,9 +73,11 @@ export const platformApi = {
   updateApiModule: (id: number, payload: Record<string, unknown>) => withResourceInvalidation("platform:api-modules", http.patch(`/api-modules/${id}/`, payload)),
   deleteApiModule: (id: number) => withResourceInvalidation("platform:api-modules", http.delete(`/api-modules/${id}/`)),
   apiSuites: (params?: Record<string, unknown>) => http.get("/api-suites/", { params }),
+  apiSuite: (id: number) => http.get(`/api-suites/${id}/`),
   cachedApiSuites: (params?: Record<string, unknown>) => getOrLoadResource(`platform:api-suites:${JSON.stringify(params || {})}`, async () => (await http.get("/api-suites/", { params, cache: false })).data),
   createApiSuite: (payload: Record<string, unknown>) => http.post("/api-suites/", payload),
   updateApiSuite: (id: number, payload: Record<string, unknown>) => http.patch(`/api-suites/${id}/`, payload),
+  updateApiSuiteMembers: (id: number, payload: Record<string, unknown>) => http.put(`/api-suites/${id}/members/`, payload),
   deleteApiSuite: (id: number) => http.delete(`/api-suites/${id}/`),
   apiScenarios: (params?: Record<string, unknown>) => http.get("/api-scenarios/", { params }),
   createApiScenario: (payload: Record<string, unknown>) => http.post("/api-scenarios/", payload),
@@ -85,7 +87,7 @@ export const platformApi = {
   createApiStep: (payload: Record<string, unknown>) => http.post("/api-steps/", payload),
   updateApiStep: (id: number, payload: Record<string, unknown>) => http.patch(`/api-steps/${id}/`, payload),
   deleteApiStep: (id: number) => http.delete(`/api-steps/${id}/`),
-  testRuns: () => http.get("/test-runs/", { cache: false }),
+  testRuns: (params?: Record<string, unknown>) => http.get("/test-runs/", { params, cache: false }),
   testRun: (id: number) => http.get(`/test-runs/${id}/`, { cache: false }),
   scheduledPlans: (params?: Record<string, unknown>) => http.get("/scheduled-plans/", { params, cache: false }),
   createScheduledPlan: (payload: Record<string, unknown>) => http.post("/scheduled-plans/", payload),
@@ -141,6 +143,11 @@ export const platformApi = {
   deleteUiAction: (id: number) => http.delete(`/ui-actions/${id}/`),
   runUiCase: (id: number, payload?: Record<string, unknown>) => http.post(`/ui-cases/${id}/run/`, payload || {}, { timeout: 120000 }),
   debugApi: (payload: Record<string, unknown>) => http.post("/api-definitions/debug/", payload, { toast: false }),
+  internalApiDocuments: () => http.get("/internal-api-documents/"),
+  internalApiDocument: (code: string) => http.get(`/internal-api-documents/${code}/documentation/`, { cache: false }),
+  apiImportCallLogs: (params?: Record<string, unknown>) => http.get("/api-import-call-logs/", { params }),
+  apiImportCallLog: (requestId: string) => http.get(`/api-import-call-logs/${requestId}/`),
+  apiImportBatch: (batchNo: string) => http.get(`/api-import-batches/${batchNo}/`),
 };
 
 const withResourceInvalidation = async <T>(key: string, request: Promise<T>) => {

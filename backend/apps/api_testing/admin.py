@@ -1,6 +1,33 @@
 from django.contrib import admin
 
-from apps.api_testing.models import ApiCase, ApiDefinition, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiTestCase
+from apps.api_testing.models import ApiCase, ApiDefinition, ApiImportBatch, ApiImportItem, ApiMockRule, ApiModule, ApiScenario, ApiStep, ApiSuite, ApiTestCase, OpenApiCallLog, OpenApiCapability
+
+
+@admin.register(OpenApiCapability)
+class OpenApiCapabilityAdmin(admin.ModelAdmin):
+    list_display = ["code", "name", "method", "path", "updated_at"]
+    search_fields = ["code", "name", "path"]
+    list_filter = ["method"]
+
+
+@admin.register(OpenApiCallLog)
+class OpenApiCallLogAdmin(admin.ModelAdmin):
+    list_display = ["request_id", "capability_name", "caller", "status", "created_at"]
+    search_fields = ["request_id", "capability_code", "capability_name"]
+    list_filter = ["status"]
+
+
+@admin.register(ApiImportBatch)
+class ApiImportBatchAdmin(admin.ModelAdmin):
+    list_display = ["batch_no", "module_code", "status", "total", "success_count", "skipped_count", "failed_count", "created_at"]
+    search_fields = ["batch_no", "module_code"]
+    list_filter = ["status"]
+
+
+@admin.register(ApiImportItem)
+class ApiImportItemAdmin(admin.ModelAdmin):
+    list_display = ["batch", "sequence_no", "name", "method", "path", "status"]
+    list_filter = ["status", "method"]
 
 
 @admin.register(ApiModule)

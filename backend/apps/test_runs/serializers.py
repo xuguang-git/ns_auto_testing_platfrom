@@ -13,12 +13,11 @@ class TestRunStepSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
 
-class TestRunSerializer(serializers.ModelSerializer):
-    steps = TestRunStepSerializer(many=True, read_only=True)
+class TestRunBaseSerializer(serializers.ModelSerializer):
     suite_name = serializers.CharField(source="suite.name", read_only=True)
     environment_name = serializers.CharField(source="environment.name", read_only=True)
     report_name = serializers.SerializerMethodField()
-    step_groups = serializers.SerializerMethodField()
+    result_status = serializers.SerializerMethodField()
 
     def get_report_name(self, obj: TestRun) -> str:
         """按测试套件名称和执行时间生成业务可读的报告名称。"""
@@ -28,6 +27,57 @@ class TestRunSerializer(serializers.ModelSerializer):
             run_time = timezone.localtime(run_time)
             return f"{suite_name}{run_time.strftime('%Y%m%d%H%M%S')}"
         return f"{suite_name}{obj.pk}"
+
+    def get_result_status(self, obj: TestRun) -> str:
+        if obj.status in {TestRun.Status.PENDING, TestRun.Status.RUNNING}:
+            return obj.status
+        if obj.status == TestRun.Status.FAILED:
+            return "failed"
+        return "failed" if int((obj.summary or {}).get("failed") or 0) else "success"
+
+
+class TestRunListSerializer(TestRunBaseSerializer):
+    """报告列表仅返回卡片展示需要的轻量字段。"""
+
+    class Meta:
+        model = TestRun
+        fields = [
+            "id",
+            "suite",
+            "environment",
+            "status",
+            "result_status",
+            "trigger_type",
+            "started_at",
+            "finished_at",
+            "duration_ms",
+            "summary",
+            "created_at",
+            "suite_name",
+            "environment_name",
+            "report_name",
+        ]
+
+
+class TestRunStatusSerializer(TestRunListSerializer):
+    """待运行和运行中的报告详情仅返回状态信息。"""
+
+    detail_available = serializers.SerializerMethodField()
+
+    def get_detail_available(self, obj: TestRun) -> bool:
+        return False
+
+    class Meta(TestRunListSerializer.Meta):
+        fields = [*TestRunListSerializer.Meta.fields, "detail_available"]
+
+
+class TestRunSerializer(TestRunBaseSerializer):
+    steps = TestRunStepSerializer(many=True, read_only=True)
+    step_groups = serializers.SerializerMethodField()
+    detail_available = serializers.SerializerMethodField()
+
+    def get_detail_available(self, obj: TestRun) -> bool:
+        return obj.status not in {TestRun.Status.PENDING, TestRun.Status.RUNNING}
 
     def get_step_groups(self, obj: TestRun) -> list[dict]:
         """按场景聚合执行步骤，供前端分组展示报告明细。"""

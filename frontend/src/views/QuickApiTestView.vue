@@ -112,10 +112,8 @@
             <el-option v-for="item in platformOptions" :key="item.code" :label="item.name" :value="item.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="模块" required>
-          <el-select v-model="createForm.module" style="width: 100%">
-            <el-option v-for="item in modulesForPlatform(createForm.platform)" :key="item.id" :label="item.name" :value="item.id" />
-          </el-select>
+        <el-form-item label="所属模块">
+          <el-tree-select v-model="createForm.module" :data="moduleTreeOptions(createForm.platform)" clearable check-strictly node-key="value" :props="{ label: 'label', children: 'children' }" style="width: 100%" />
         </el-form-item>
         <el-form-item label="请求方式">
           <el-input :model-value="request.method" disabled />
@@ -165,6 +163,7 @@ import { platformApi, unwrapList } from "@/api/platform";
 import { formatBodyText } from "@/utils/bodyFormat";
 import { parseCurl } from "@/utils/curl";
 import { extractJsonPath, formatExtractValue } from "@/utils/jsonExtract";
+import { buildModuleTreeOptions } from "@/utils/moduleTree";
 
 interface RowItem { enabled: boolean; key: string; value: string; description?: string }
 interface ExtractorRow { uid: number; name: string; path: string; ok: boolean; message: string; valueText: string; value?: unknown }
@@ -251,6 +250,7 @@ const platformCode = (item: any) => item.code?.toUpperCase?.() || item.code || "
 const platformOptions = computed(() => platforms.value.map((item) => ({ ...item, code: platformCode(item) })));
 const modulePlatformCode = (module: any) => module.platform || platformCode(platforms.value.find((item) => item.id === module.managed_platform));
 const modulesForPlatform = (code: string) => modules.value.filter((item) => modulePlatformCode(item) === code);
+const moduleTreeOptions = (code: string) => buildModuleTreeOptions(modules.value, code);
 
 const parseJson = (text: string, fallback: unknown) => {
   if (!text.trim()) return fallback;
@@ -340,13 +340,12 @@ const openQuickCreate = () => {
   }
   createForm.name = inferName();
   createForm.platform = createForm.platform || platformOptions.value[0]?.code || "";
-  createForm.module = createForm.module || modulesForPlatform(createForm.platform)[0]?.id;
   createDialog.value = true;
 };
 
 const saveQuickCreate = async () => {
-  if (!createForm.name.trim() || !createForm.platform || !createForm.module) {
-    ElMessage.warning("接口名称、平台和模块必填");
+  if (!createForm.name.trim() || !createForm.platform) {
+    ElMessage.warning("接口名称和平台必填");
     return;
   }
   creating.value = true;
@@ -569,7 +568,6 @@ onMounted(async () => {
   modules.value = unwrapList(moduleResp.data);
   request.environment = environments.value.find((item) => item.is_default)?.id || environments.value[0]?.id;
   createForm.platform = platformOptions.value[0]?.code || "";
-  createForm.module = modulesForPlatform(createForm.platform)[0]?.id;
 });
 </script>
 

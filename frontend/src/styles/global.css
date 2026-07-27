@@ -5929,6 +5929,10 @@ button.module-title:hover {
   align-items: stretch;
 }
 
+.suite-stage {
+  grid-template-columns: minmax(240px, 280px) minmax(560px, 1fr);
+}
+
 .scenario-list-panel,
 .scenario-canvas,
 .scenario-runner {
@@ -6299,9 +6303,15 @@ button.module-title:hover {
 }
 
 .suite-remove-button {
-  justify-self: end;
   color: var(--danger);
   border-color: var(--gray-200);
+}
+
+.suite-member-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .suite-remove-button:hover {
@@ -6322,6 +6332,11 @@ button.module-title:hover {
       "runner runner";
     align-items: stretch;
     overflow: auto;
+  }
+
+  .suite-stage {
+    grid-template-columns: minmax(220px, 260px) minmax(560px, 1fr);
+    grid-template-areas: "list canvas";
   }
 
   .scenario-list-panel {
@@ -6371,6 +6386,10 @@ button.module-title:hover {
     overflow: auto;
   }
 
+  .suite-stage {
+    grid-template-columns: minmax(220px, 280px) minmax(520px, 1fr);
+  }
+
   .scenario-runner {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
@@ -6397,6 +6416,13 @@ button.module-title:hover {
       "canvas"
       "runner";
     overflow: auto;
+  }
+
+  .suite-stage {
+    grid-template-columns: minmax(320px, 1fr);
+    grid-template-areas:
+      "list"
+      "canvas";
   }
 
   .scenario-runner {

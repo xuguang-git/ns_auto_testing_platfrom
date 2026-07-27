@@ -9,39 +9,21 @@
       <section v-for="platform in platforms" :key="platform.id">
         <button class="tree-node platform unified-tree-node" :class="{ active: selectedPlatform === platform.id && !selectedModule }" @click="selectPlatform(platform.id)">
           <span class="tree-node-main">
-            <button v-if="platformHasChildren(platform)" class="tree-toggle-btn" @click.stop="togglePlatform(platform.id)">
+            <span v-if="platformHasChildren(platform)" class="tree-toggle-btn" role="button" tabindex="0" @click.stop="togglePlatform(platform.id)" @keydown.enter.stop="togglePlatform(platform.id)">
               <span class="tree-toggle" :class="{ expanded: isPlatformExpanded(platform.id) }">›</span>
-            </button>
+            </span>
             <span>{{ platform.name }}</span>
           </span>
           <em>{{ modulesByPlatform(platform).length }}</em>
         </button>
-        <template v-if="isPlatformExpanded(platform.id)">
-          <template v-for="module in rootModulesByPlatform(platform)" :key="module.id">
-            <button
-              class="tree-node child unified-tree-node"
-              :class="{ active: selectedModule === module.id }"
-              @click="selectModule(module.id, platform.id)"
-            >
-              <span class="tree-node-main">
-                <button v-if="moduleHasChildren(module.id)" class="tree-toggle-btn" @click.stop="toggleModule(module.id)">
-                  <span class="tree-toggle" :class="{ expanded: isModuleExpanded(module.id) }">›</span>
-                </button>
-                <span>{{ module.name }}</span>
-              </span>
-            </button>
-            <button
-              v-for="child in childModules(module.id)"
-              v-show="isModuleExpanded(module.id)"
-              :key="child.id"
-              class="tree-node child sub-child unified-tree-node"
-              :class="{ active: selectedModule === child.id }"
-              @click="selectModule(child.id, platform.id)"
-            >
-              {{ child.name }}
-            </button>
-          </template>
-        </template>
+        <ApiDirectoryBranch
+          v-if="isPlatformExpanded(platform.id)"
+          :nodes="rootModulesByPlatform(platform)"
+          :all-modules="modulesByPlatform(platform)"
+          :selected-module-id="selectedModule"
+          :count-label="moduleCountLabel"
+          @select-module="selectModule($event, platform.id)"
+        />
       </section>
     </aside>
 
@@ -86,6 +68,9 @@
         </el-form-item>
         <el-form-item label="模块名称" required><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="模块编码" required><el-input v-model="form.code" /></el-form-item>
+        <el-form-item label="上级模块">
+          <el-tree-select v-model="form.parent" :data="parentModuleOptions" clearable check-strictly node-key="value" :props="{ label: 'label', children: 'children', disabled: 'disabled' }" style="width: 100%" />
+        </el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="排序"><el-input-number v-model="form.sort_order" :min="0" :max="999" /></el-form-item>
         <el-form-item label="启用状态"><el-switch v-model="form.is_active" /></el-form-item>
@@ -104,6 +89,8 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
 
 import { platformApi, unwrapList } from "@/api/platform";
+import ApiDirectoryBranch from "@/components/ApiDirectoryBranch.vue";
+import { buildModuleTreeOptions, modulePathNames } from "@/utils/moduleTree";
 
 const loading = ref(false);
 const saving = ref(false);
@@ -115,7 +102,7 @@ const selectedModule = ref<number>();
 const expandedPlatforms = ref<number[]>([]);
 const expandedModules = ref<number[]>([]);
 const editingId = ref<number>();
-const form = reactive({ managed_platform: undefined as number | undefined, platform: "ERP", name: "", code: "", description: "", sort_order: 0, is_active: true });
+const form = reactive({ managed_platform: undefined as number | undefined, platform: "ERP", parent: undefined as number | undefined, name: "", code: "", description: "", sort_order: 0, is_active: true });
 
 const filteredModules = computed(() => modules.value.filter((item) => (!selectedPlatform.value || item.managed_platform === selectedPlatform.value) && (!selectedModule.value || item.id === selectedModule.value)));
 const breadcrumb = computed(() => {
@@ -130,6 +117,10 @@ const breadcrumb = computed(() => {
 const modulesByPlatform = (platform: any) => modules.value.filter((item) => item.managed_platform === platform.id || item.platform === platform.code?.toUpperCase());
 const rootModulesByPlatform = (platform: any) => modulesByPlatform(platform).filter((item) => !item.parent);
 const childModules = (parentId: number) => modules.value.filter((item) => item.parent === parentId);
+const parentModuleOptions = computed(() => {
+  const options = buildModuleTreeOptions(modules.value, platformCodeForId(form.managed_platform));
+  return disableLeafParents(editingId.value ? removeCurrentSubtree(options, editingId.value) : options);
+});
 const platformHasChildren = (platform: any) => rootModulesByPlatform(platform).length > 0;
 const moduleHasChildren = (moduleId: number) => childModules(moduleId).length > 0;
 const isPlatformExpanded = (platformId: number) => expandedPlatforms.value.includes(platformId);
@@ -141,6 +132,15 @@ const toggleModule = (moduleId: number) => {
   expandedModules.value = isModuleExpanded(moduleId) ? expandedModules.value.filter((item) => item !== moduleId) : [...expandedModules.value, moduleId];
 };
 const platformName = (module: any) => platforms.value.find((item) => item.id === module?.managed_platform || item.code?.toUpperCase() === module?.platform)?.name || module?.platform || "-";
+const platformCodeForId = (id?: number) => platformCode(platforms.value.find((item) => item.id === id));
+const platformCode = (platform: any) => platform?.code?.toUpperCase?.() || platform?.code || "";
+const removeCurrentSubtree = (nodes: any[], currentId: number): any[] => nodes.filter((node) => node.value !== currentId).map((node) => ({ ...node, children: removeCurrentSubtree(node.children || [], currentId) }));
+const disableLeafParents = (nodes: any[]): any[] => nodes.map((node) => ({
+  ...node,
+  disabled: modulePathNames(modules.value, node.value).length >= 3,
+  children: disableLeafParents(node.children || []),
+}));
+const moduleCountLabel = (module: any) => `${module.api_count || 0} 接口`;
 const syncLegacyPlatform = () => {
   const platform = platforms.value.find((item) => item.id === form.managed_platform);
   form.platform = platform?.code?.toUpperCase() || "ERP";
@@ -173,14 +173,18 @@ const selectModule = (id: number, platformId: number) => {
 };
 
 const openCreate = () => {
+  if (selectedModule.value && modulePathNames(modules.value, selectedModule.value).length >= 3) {
+    ElMessage.warning("第三级模块不能新增下级模块");
+    return;
+  }
   editingId.value = undefined;
-  Object.assign(form, { managed_platform: selectedPlatform.value || platforms.value[0]?.id, platform: "ERP", name: "", code: "", description: "", sort_order: modules.value.length + 1, is_active: true });
+  Object.assign(form, { managed_platform: selectedPlatform.value || platforms.value[0]?.id, platform: "ERP", parent: selectedModule.value, name: "", code: "", description: "", sort_order: modules.value.length + 1, is_active: true });
   syncLegacyPlatform();
   formVisible.value = true;
 };
 const openEdit = (row: any) => {
   editingId.value = row.id;
-  Object.assign(form, { managed_platform: row.managed_platform, platform: row.platform, name: row.name, code: row.code || "", description: row.description || "", sort_order: row.sort_order || 0, is_active: row.is_active });
+  Object.assign(form, { managed_platform: row.managed_platform, platform: row.platform, parent: row.parent, name: row.name, code: row.code || "", description: row.description || "", sort_order: row.sort_order || 0, is_active: row.is_active });
   formVisible.value = true;
 };
 const saveModule = async () => {
@@ -196,6 +200,8 @@ const saveModule = async () => {
     ElMessage.success("模块已保存");
     formVisible.value = false;
     await load();
+  } catch {
+    // HTTP 拦截器已展示后端返回的具体错误，无需重复提示。
   } finally {
     saving.value = false;
   }

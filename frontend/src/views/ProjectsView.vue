@@ -256,7 +256,7 @@
           <el-select v-model="preRequestForm.scope_keys" multiple filterable style="width: 100%" placeholder="选择平台或模块" @change="handlePreRequestScopesChange">
             <el-option-group v-for="platform in platformOptions" :key="platform.code" :label="platform.name">
               <el-option :label="`${platform.name}（整个平台）`" :value="platformScopeKey(platform.code)" />
-              <el-option v-for="module in modulesForPlatform(platform.code)" :key="module.id" :label="module.name" :value="moduleScopeKey(module.id)" />
+              <el-option v-for="module in modulesForPlatform(platform.code)" :key="module.id" :label="`${platform.name} / ${moduleName(module.id)}`" :value="moduleScopeKey(module.id)" />
             </el-option-group>
           </el-select>
         </el-form-item>
@@ -402,6 +402,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
 
 import { platformApi, unwrapList } from "@/api/platform";
+import { modulePathLabel } from "@/utils/moduleTree";
 
 const loading = ref(false);
 const saving = ref(false);
@@ -501,7 +502,7 @@ const platformUrlRows = computed(() =>
 );
 
 const platformName = (code: string) => platformOptions.value.find((item) => item.code === code)?.name || code;
-const moduleName = (id: number) => modules.value.find((item) => item.id === id)?.name || `模块 ${id}`;
+const moduleName = (id: number) => modulePathLabel(modules.value, id, `模块 ${id}`);
 const envTypeText = (type: string) => ({ dev: "开发", test: "测试", staging: "预发", prod: "生产" }[type] || type);
 const cleanPlatformUrls = (urls: Record<string, string>) =>
   Object.fromEntries(Object.entries(urls).map(([key, value]) => [key.toUpperCase(), value.trim()]).filter(([, value]) => value));

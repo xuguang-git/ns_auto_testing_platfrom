@@ -13,29 +13,21 @@
         <section v-for="platform in platformStats" :key="platform.code" class="api-tree-group">
           <button class="secondary-item" :class="{ active: platformFilter === platform.code && !moduleFilter }" @click="selectPlatform(platform.code)">
             <span class="tree-node-main">
-              <button v-if="platformHasChildren(platform.code)" class="tree-toggle-btn" @click.stop="togglePlatform(platform.code)">
+              <span v-if="platformHasChildren(platform.code)" class="tree-toggle-btn" role="button" tabindex="0" @click.stop="togglePlatform(platform.code)" @keydown.enter.stop="togglePlatform(platform.code)">
                 <span class="tree-toggle" :class="{ expanded: isPlatformExpanded(platform.code) }">›</span>
-              </button>
+              </span>
               <span>{{ platform.label }}</span>
             </span>
             <el-tag size="small">{{ platform.count }}</el-tag>
           </button>
           <template v-if="isPlatformExpanded(platform.code)">
-            <button
-              v-for="module in rootModulesForPlatform(platform.code)"
-              :key="module.id"
-              class="secondary-item child"
-              :class="{ active: moduleFilter === module.id }"
-              @click="selectModule(platform.code, module.id)"
-            >
-              <span class="tree-node-main">
-                <button v-if="moduleHasChildren(module.id)" class="tree-toggle-btn" @click.stop="toggleModule(module.id)">
-                  <span class="tree-toggle" :class="{ expanded: isModuleExpanded(module.id) }">›</span>
-                </button>
-                <span>{{ module.name }}</span>
-              </span>
-              <el-tag size="small">{{ module.api_count || countApisByModule(module.id) }}</el-tag>
-            </button>
+            <RecursiveModuleTree
+              :nodes="rootModulesForPlatform(platform.code)"
+              :all-modules="modulesForPlatform(platform.code)"
+              :selected-module-id="moduleFilter"
+              :count-label="moduleApiCountLabel"
+              @select-module="selectModule(platform.code, $event)"
+            />
           </template>
         </section>
       </div>
@@ -49,7 +41,7 @@
             <el-option v-for="item in methods" :key="item" :label="item" :value="item" />
           </el-select>
           <el-select v-model="moduleFilter" clearable placeholder="模块" style="width: 150px">
-            <el-option v-for="item in availableFilterModules" :key="item.id" :label="item.name" :value="item.id" />
+            <el-option v-for="item in availableFilterModules" :key="item.id" :label="moduleName(item.id)" :value="item.id" />
           </el-select>
           <el-select v-model="statusFilter" clearable placeholder="状态" style="width: 130px">
             <el-option label="开发中" value="developing" />
@@ -93,10 +85,8 @@
             <el-option v-for="item in platforms" :key="item.id" :label="item.name" :value="platformCode(item)" />
           </el-select>
         </el-form-item>
-        <el-form-item label="所属模块" required>
-          <el-select v-model="form.module" clearable style="width: 100%">
-            <el-option v-for="item in availableFormModules" :key="item.id" :label="item.name" :value="item.id" />
-          </el-select>
+        <el-form-item label="所属模块">
+          <el-tree-select v-model="form.module" :data="moduleTreeOptions(form.platform)" clearable check-strictly node-key="value" :props="{ label: 'label', children: 'children' }" style="width: 100%" />
         </el-form-item>
         <el-form-item label="请求方法" required>
           <el-select v-model="form.method" style="width: 100%">
@@ -131,6 +121,8 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
 
 import { platformApi, unwrapList } from "@/api/platform";
+import RecursiveModuleTree from "@/components/RecursiveModuleTree.vue";
+import { buildModuleTreeOptions, modulePathLabel } from "@/utils/moduleTree";
 
 interface ApiDefinition {
   id: number;
@@ -182,11 +174,13 @@ const form = reactive({
 
 const platformCode = (platform: any) => platform.code?.toUpperCase?.() || platform.code || "";
 const platformName = (code: string) => platforms.value.find((item) => platformCode(item) === code)?.name || code;
-const moduleName = (id?: number) => modules.value.find((item) => item.id === id)?.name || "-";
+const moduleName = (id?: number) => modulePathLabel(modules.value, id, "未分配");
 const modulePlatformCode = (module: any) => module.platform || platformCode(platforms.value.find((item) => item.id === module.managed_platform));
 const countApisByModule = (id: number) => apis.value.filter((api) => api.module === id).length;
 const modulesForPlatform = (code: string) => modules.value.filter((item) => modulePlatformCode(item) === code);
 const rootModulesForPlatform = (code: string) => modulesForPlatform(code).filter((item) => !item.parent);
+const moduleTreeOptions = (code: string) => buildModuleTreeOptions(modules.value, code);
+const moduleApiCountLabel = (module: any) => `${Number(module.descendant_api_count ?? module.api_count ?? countApisByModule(module.id))} 接口`;
 const childModules = (parentId: number) => modules.value.filter((item) => item.parent === parentId);
 const platformHasChildren = (code: string) => rootModulesForPlatform(code).length > 0;
 const moduleHasChildren = (moduleId: number) => childModules(moduleId).length > 0;
@@ -299,7 +293,7 @@ const openEdit = (row: ApiDefinition) => {
   drawerVisible.value = true;
 };
 const buildPayload = async () => {
-  if (!form.name.trim() || !form.path.trim() || !form.platform || !form.module) throw new Error("接口名称、平台、模块和请求路径必填");
+  if (!form.name.trim() || !form.path.trim() || !form.platform) throw new Error("接口名称、平台和请求路径必填");
   return {
     name: form.name.trim(),
     platform: form.platform,

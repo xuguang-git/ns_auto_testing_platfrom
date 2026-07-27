@@ -23,6 +23,7 @@ let userRefreshUntil = 0;
 const cacheDebugEnabled = () => localStorage.getItem("ns_http_cache_debug") === "1";
 let lastErrorToast = { text: "", time: 0 };
 const SUCCESS_CODE = 0;
+const UNAUTHORIZED_CODE = 40100;
 const BUSINESS_WARNING_CODES = new Set([40000, 42200, 42900]);
 
 export const http = axios.create({
@@ -107,6 +108,29 @@ if (typeof window !== "undefined") {
 }
 
 let refreshPromise: Promise<AxiosResponse> | null = null;
+let authRedirectPromise: Promise<void> | null = null;
+
+const isAuthenticationExpired = (error: any) => {
+  const statusCode = Number(error?.response?.status);
+  const businessCode = Number(error?.businessCode ?? normalizeEnvelope(error?.response?.data)?.code);
+  return statusCode === 401 || (statusCode === 403 && businessCode === UNAUTHORIZED_CODE);
+};
+
+const redirectToLoginAfterAuthenticationExpired = async () => {
+  if (router.currentRoute.value.path === "/login") return;
+  if (!authRedirectPromise) {
+    authRedirectPromise = (async () => {
+      const { useAuthStore } = await import("@/stores/auth");
+      const auth = useAuthStore();
+      const redirect = router.currentRoute.value.fullPath;
+      auth.clearSession();
+      await router.replace({ path: "/login", query: { redirect } });
+    })().finally(() => {
+      authRedirectPromise = null;
+    });
+  }
+  await authRedirectPromise;
+};
 
 http.interceptors.request.use((config) => config);
 
@@ -127,8 +151,9 @@ http.interceptors.response.use(
     const message = extractErrorMessage(error);
     if (message) error.message = message;
     const originalConfig = error?.config || {};
+    const authenticationExpired = isAuthenticationExpired(error);
     if (
-      error?.response?.status === 401 &&
+      authenticationExpired &&
       !originalConfig.__isRetryRequest &&
       !String(originalConfig.url || "").includes("/auth/login") &&
       !String(originalConfig.url || "").includes("/auth/refresh")
@@ -143,11 +168,12 @@ http.interceptors.response.use(
         refreshPromise = null;
       }
     }
+    if (authenticationExpired) {
+      await redirectToLoginAfterAuthenticationExpired();
+      return Promise.reject(error);
+    }
     if (!axios.isCancel(error) && error?.config?.toast !== false) {
       showBusinessToast(error?.response?.data?.code, message);
-    }
-    if (error?.response?.status === 401 && router.currentRoute.value.path !== "/login") {
-      router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
     }
     return Promise.reject(error);
   },
