@@ -26,7 +26,7 @@ const firstVisiblePath = (auth: ReturnType<typeof useAuthStore>) => {
     { path: "/notifications", permission: "page.config.notification" },
     { path: "/notification-templates", permission: "page.config.notification_template" },
     { path: "/database-management", permission: "page.config.database" },
-    { path: "/api-integration", permission: "api.import" },
+    { path: "/api-integration", permission: "page.config.api_integration" },
     { path: "/users", permission: "page.permission.user" },
     { path: "/roles", permission: "page.permission.role" },
     { path: "/audit-logs", permission: "page.permission.audit" },
@@ -39,6 +39,8 @@ export const defaultAuthPath = DEFAULT_AUTH_PATH;
 
 const routes: RouteRecordRaw[] = [
   { path: "/login", name: "login", component: () => import("@/views/LoginView.vue") },
+  { path: "/admin/:pathMatch(.*)*", redirect: "/" },
+  { path: "/api-testing/admin/:pathMatch(.*)*", redirect: "/api-testing/apis" },
   {
     path: "/",
     component: MainLayout,
@@ -66,7 +68,7 @@ const routes: RouteRecordRaw[] = [
       { path: "notifications", name: "notifications", component: () => import("@/views/NotificationManagementView.vue"), meta: { pagePermission: "page.config.notification" } },
       { path: "notification-templates", name: "notificationTemplates", component: () => import("@/views/NotificationTemplateView.vue"), meta: { pagePermission: "page.config.notification_template" } },
       { path: "database-management", name: "databaseManagement", component: () => import("@/views/DatabaseManagementView.vue"), meta: { pagePermission: "page.config.database" } },
-      { path: "api-integration", name: "apiIntegration", component: () => import("@/views/ApiIntegrationView.vue"), meta: { pagePermission: "api.import" } },
+      { path: "api-integration", name: "apiIntegration", component: () => import("@/views/ApiIntegrationView.vue"), meta: { pagePermission: "page.config.api_integration" } },
       { path: "users", name: "users", component: () => import("@/views/UserManagementView.vue"), meta: { pagePermission: "page.permission.user" } },
       { path: "roles", name: "roles", component: () => import("@/views/RoleManagementView.vue"), meta: { pagePermission: "page.permission.role" } },
       { path: "audit-logs", name: "auditLogs", component: () => import("@/views/AuditLogView.vue"), meta: { pagePermission: "page.permission.audit" } },

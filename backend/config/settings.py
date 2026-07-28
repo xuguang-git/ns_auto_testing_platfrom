@@ -35,6 +35,7 @@ env = environ.Env(
     USER_SESSION_SECONDS=(int, 24 * 60 * 60),
     REMEMBER_ME_USER_SESSION_SECONDS=(int, 30 * 24 * 60 * 60),
     FRONTEND_BASE_URL=(str, "http://localhost:5173"),
+    DJANGO_ADMIN_ENABLED=(bool, False),
 )
 env.read_env(BASE_DIR / ".env")
 
@@ -43,7 +44,7 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    "config.apps.SecureAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -121,6 +122,7 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 FRONTEND_DIST_DIR = BASE_DIR.parent / "frontend" / "dist"
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL").rstrip("/")
+DJANGO_ADMIN_ENABLED = env("DJANGO_ADMIN_ENABLED")
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
@@ -133,7 +135,7 @@ CSRF_TRUSTED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["apps.core.renderers.UnifiedJSONRenderer"],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
+        # 业务 API 仅使用平台 Token，避免残留 Django session 触发 CSRF 校验。
         "apps.accounts.authentication.StrongTokenAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
