@@ -9,6 +9,7 @@ from apps.accounts.services import (
     assert_user_manageable,
     ensure_builtin_roles,
     ensure_profile,
+    expand_permission_hierarchy,
     is_protected_user,
     is_protected_username,
     protected_user_security_fix,
@@ -66,6 +67,9 @@ class RoleSerializer(serializers.ModelSerializer):
         if self.instance and self.instance.is_builtin and value != self.instance.code:
             raise serializers.ValidationError("预置角色编码不可修改")
         return value
+
+    def validate_permissions(self, value):
+        return expand_permission_hierarchy(value)
 
 
 class UserProfileSerializer(serializers.ModelSerializer):

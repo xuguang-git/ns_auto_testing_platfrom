@@ -111,6 +111,7 @@ PAGE_PERMISSION_DEFINITIONS = [
             {"code": "page.config.notification", "module": "notification", "name": "消息通知", "route_path": "/notifications", "sort_order": 730, "actions": ["notification.read", "notification.create", "notification.update", "notification.delete"]},
             {"code": "page.config.notification_template", "module": "notification_template", "name": "消息模板", "route_path": "/notification-templates", "sort_order": 740, "actions": ["notification_template.read", "notification_template.create", "notification_template.update", "notification_template.delete"]},
             {"code": "page.config.database", "module": "database", "name": "数据库管理", "route_path": "/database-management", "sort_order": 750, "actions": ["database.read", "database.create", "database.update", "database.delete", "database.execute"]},
+            {"code": "page.config.api_integration", "module": "api_integration", "name": "接口说明", "route_path": "/api-integration", "sort_order": 760, "actions": ["api_integration.read", "api.import"]},
         ],
     },
 ]
@@ -142,6 +143,7 @@ ACTION_PERMISSION_DEFINITIONS = [
     ("api.write", "api", "write", "接口维护", False),
     ("api.delete", "api", "delete", "接口删除"),
     ("api.debug", "api", "execute", "接口调试"),
+    ("api_integration.read", "api_integration", "read", "接口说明查看"),
     ("api.import", "api", "execute", "接口批量导入"),
     ("api_case.read", "api_case", "read", "用例查看"),
     ("api_case.create", "api_case", "create", "用例新增"),
@@ -303,6 +305,9 @@ PAGE_ACTION_COMPAT_MAP = {
         "environment.update": "database.update",
         "environment.delete": "database.delete",
     },
+}
+PERMISSION_DEPENDENCY_CODES = {
+    "api.import": ["api_integration.read"],
 }
 
 ROLE_PERMISSION_CODES = {
@@ -502,6 +507,7 @@ def ensure_builtin_roles() -> None:
         if created or code == Role.BuiltinCode.SUPER_ADMIN:
             role.permissions.set(permission_map[item] for item in _role_permission_codes(code))
         _migrate_write_permissions(role, permission_map)
+        _migrate_api_integration_permissions(role, permission_map)
 
 
 def _ensure_page_permissions() -> dict[str, Permission]:
@@ -561,6 +567,43 @@ def _role_permission_codes(role_code: str) -> list[str]:
     return [code for code in ALL_PERMISSION_CODES if code in codes]
 
 
+def expand_permission_hierarchy(permissions) -> list[Permission]:
+    permission_map = {item.id: item for item in Permission.objects.all()}
+    permission_code_map = {item.code: item for item in permission_map.values()}
+    children_map: dict[int, list[int]] = {}
+    for permission in permission_map.values():
+        if permission.parent_id:
+            children_map.setdefault(permission.parent_id, []).append(permission.id)
+
+    selected_ids = {item.id for item in permissions}
+    descendant_pending_ids = list(selected_ids)
+    while descendant_pending_ids:
+        permission_id = descendant_pending_ids.pop()
+        for child_id in children_map.get(permission_id, []):
+            if child_id not in selected_ids:
+                selected_ids.add(child_id)
+                descendant_pending_ids.append(child_id)
+
+    for permission in list(permission_map.values()):
+        if permission.id not in selected_ids:
+            continue
+        dependency_ids = [
+            permission_code_map[dependency].id
+            for dependency in PERMISSION_DEPENDENCY_CODES.get(permission.code, [])
+            if dependency in permission_code_map
+        ]
+        selected_ids.update(dependency_ids)
+
+    ancestor_pending_ids = list(selected_ids)
+    while ancestor_pending_ids:
+        permission_id = ancestor_pending_ids.pop()
+        parent_id = permission_map.get(permission_id).parent_id if permission_id in permission_map else None
+        if parent_id and parent_id not in selected_ids:
+            selected_ids.add(parent_id)
+            ancestor_pending_ids.append(parent_id)
+    return [permission_map[permission_id] for permission_id in sorted(selected_ids)]
+
+
 def _migrate_write_permissions(role: Role, permission_map: dict[str, Permission]) -> None:
     existing_codes = set(role.permissions.values_list("code", flat=True))
     target_codes = {
@@ -574,6 +617,16 @@ def _migrate_write_permissions(role: Role, permission_map: dict[str, Permission]
             target_codes.update(next_code for old_code, next_code in action_map.items() if old_code in existing_codes)
     if target_codes:
         role.permissions.add(*(permission_map[code] for code in target_codes if code in permission_map))
+
+
+def _migrate_api_integration_permissions(role: Role, permission_map: dict[str, Permission]) -> None:
+    if not role.permissions.filter(code="api.import").exists():
+        return
+    role.permissions.add(*(
+        permission_map[code]
+        for code in ["page.config", "page.config.api_integration", "api_integration.read"]
+        if code in permission_map
+    ))
 
 
 def get_default_role() -> Role | None:
