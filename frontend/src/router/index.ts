@@ -40,6 +40,7 @@ export const defaultAuthPath = DEFAULT_AUTH_PATH;
 const routes: RouteRecordRaw[] = [
   { path: "/login", name: "login", component: () => import("@/views/LoginView.vue") },
   { path: "/admin/:pathMatch(.*)*", redirect: "/" },
+  { path: "/api-testing/admin/:pathMatch(.*)*", redirect: "/api-testing/apis" },
   {
     path: "/",
     component: MainLayout,
