@@ -304,7 +304,7 @@ def _curl_example(request, capability):
 
 class InternalApiDocumentationViewSet(viewsets.ViewSet):
     lookup_value_regex = "[^/]+"
-    permission_classes = [action_permission("api.import")]
+    permission_classes = [action_permission("api_integration.read")]
 
     def list(self, request):
         queryset = OpenApiCapability.objects.order_by("sort_order", "id")
@@ -326,7 +326,7 @@ class InternalApiDocumentationViewSet(viewsets.ViewSet):
         return _success(data)
 
 class ApiImportCallLogViewSet(viewsets.ViewSet):
-    permission_classes = [action_permission("api.import")]
+    permission_classes = [action_permission("api_integration.read")]
 
     def list(self, request):
         queryset = OpenApiCallLog.objects.select_related("caller", "related_batch").order_by("-created_at")
@@ -353,7 +353,7 @@ class ApiImportCallLogViewSet(viewsets.ViewSet):
 
 
 class ApiImportBatchViewSet(viewsets.ViewSet):
-    permission_classes = [action_permission("api.import")]
+    permission_classes = [action_permission("api_integration.read")]
 
     def retrieve(self, request, pk=None):
         batch = ApiImportBatch.objects.filter(batch_no=pk).first()

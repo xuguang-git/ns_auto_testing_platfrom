@@ -2,6 +2,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.http import FileResponse, Http404, JsonResponse
+from django.shortcuts import redirect
 from django.urls import include, path, re_path
 from django.views.static import serve
 from rest_framework.routers import DefaultRouter
@@ -103,12 +104,24 @@ def frontend_index(_request):
     return FileResponse(index_path.open("rb"), content_type="text/html")
 
 
+def admin_disabled(_request, *args, **kwargs):
+    """后台管理关闭时，统一返回客户端首页，避免暴露 Django Admin 页面。"""
+    return redirect(f"{settings.FRONTEND_BASE_URL}/")
+
+
 def api_not_found(_request, path=""):
     return JsonResponse({"code": 40400, "message": "接口不存在。", "data": None, "errors": {}}, status=404)
 
 
+admin_urlpattern = (
+    path("admin/", admin.site.urls)
+    if settings.DJANGO_ADMIN_ENABLED
+    else re_path(r"^admin(?:/.*)?$", admin_disabled)
+)
+
+
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    admin_urlpattern,
     path("api/v1/auth/login-crypto/", LoginCryptoView.as_view()),
     path("api/v1/auth/login/", LoginView.as_view()),
     path("api/v1/auth/refresh/", RefreshTokenView.as_view()),

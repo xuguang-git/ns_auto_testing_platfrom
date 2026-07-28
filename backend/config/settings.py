@@ -35,6 +35,7 @@ env = environ.Env(
     USER_SESSION_SECONDS=(int, 24 * 60 * 60),
     REMEMBER_ME_USER_SESSION_SECONDS=(int, 30 * 24 * 60 * 60),
     FRONTEND_BASE_URL=(str, "http://localhost:5173"),
+    DJANGO_ADMIN_ENABLED=(bool, False),
 )
 env.read_env(BASE_DIR / ".env")
 
@@ -43,7 +44,7 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    "config.apps.SecureAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -121,6 +122,7 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 FRONTEND_DIST_DIR = BASE_DIR.parent / "frontend" / "dist"
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL").rstrip("/")
+DJANGO_ADMIN_ENABLED = env("DJANGO_ADMIN_ENABLED")
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 

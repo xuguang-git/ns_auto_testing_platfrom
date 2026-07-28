@@ -57,14 +57,13 @@
               </div>
             </div>
             <div class="permission-tree-tip">
-              Tab 权限控制左侧一级分组，菜单权限控制页面入口，功能权限控制接口和按钮操作；三者独立勾选，只在树中展示归属关系。
+              勾选父级会同步勾选全部下级；勾选部分下级时父级显示半选状态。菜单权限控制页面入口，功能权限控制接口和按钮操作。
             </div>
             <el-tree
               ref="permissionTreeRef"
               class="permission-tree"
               node-key="treeKey"
               show-checkbox
-              check-strictly
               highlight-current
               :data="permissionTree"
               :props="permissionTreeProps"
@@ -215,7 +214,7 @@ const buildPermissionTree = (source: PermissionNode[]) => {
 
 const resetTreeCheckedKeys = async () => {
   await nextTick();
-  permissionTreeRef.value?.setCheckedKeys(flatPermissionTree.value.filter((item) => form.permissions.includes(item.id)).map((item) => item.treeKey));
+  permissionTreeRef.value?.setCheckedKeys(flatPermissionTree.value.filter((item) => !item.children?.length && form.permissions.includes(item.id)).map((item) => item.treeKey));
   filterPermissionTree();
 };
 
