@@ -135,7 +135,7 @@ CSRF_TRUSTED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["apps.core.renderers.UnifiedJSONRenderer"],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
+        # 业务 API 仅使用平台 Token，避免残留 Django session 触发 CSRF 校验。
         "apps.accounts.authentication.StrongTokenAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
